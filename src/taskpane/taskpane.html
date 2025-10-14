@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Teachers Center PowerPoint</title>
+
+    <!-- Office JavaScript API -->
+    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+
+    <!-- Google Fonts and Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+    <!-- Template styles -->
+    <link href="taskpane.css" rel="stylesheet" type="text/css" />
+</head>
+
+<body>
+    <section id="sideload-msg" style="display: none;">
+        <p>Please sideload your add-in to see app body.</p>
+    </section>
+
+    <div id="app-body" style="display: none;">
+        <div class="container">
+          <div class="status" id="status"></div>
+
+          <div class="section">
+            <div class="section-title">Vocabulary Builder</div>
+
+            <!-- Essential Fields Only -->
+            <div class="input-group">
+              <label for="vocabTopic">Topic</label>
+              <input type="text" id="vocabTopic" placeholder="e.g., food, travel, business" required
+                     list="topicSuggestions" autocomplete="off">
+              <datalist id="topicSuggestions">
+                <option value="food and cooking">
+                <option value="travel and transport">
+                <option value="family and relationships">
+                <option value="work and business">
+                <option value="health and fitness">
+                <option value="home and living">
+                <option value="shopping and money">
+                <option value="hobbies and free time">
+                <option value="weather and nature">
+                <option value="technology and internet">
+              </datalist>
+            </div>
+
+            <div class="input-group">
+              <label for="vocabLevel">Student Level</label>
+              <select id="vocabLevel" required>
+                <option value="B1" selected>B1 - Intermediate (Recommended)</option>
+                <option value="A1">A1 - Beginner</option>
+                <option value="A2">A2 - Elementary</option>
+                <option value="B2">B2 - Upper Intermediate</option>
+                <option value="C1">C1 - Advanced</option>
+                <option value="C2">C2 - Proficient</option>
+              </select>
+            </div>
+
+            <!-- Smart Default Info -->
+            <div class="smart-defaults">
+              <span class="material-icons smart-icon">auto_awesome</span>
+              <span class="smart-text">Auto-selected: English, 10 words, with examples</span>
+            </div>
+
+            <!-- Main Action Buttons -->
+            <div class="button-row">
+              <button class="button button-primary button-main" id="generateBtn">
+                <span class="material-icons button-icon">auto_stories</span>
+                Quick Generate
+              </button>
+              <button class="button button-secondary" id="advancedBtn">
+                <span class="material-icons button-icon" id="advancedIcon">expand_more</span>
+                <span>More Options</span>
+              </button>
+            </div>
+
+            <!-- Advanced Options (Hidden by Default) -->
+            <div class="advanced-options" id="advancedOptions" style="display: none;">
+              <div class="advanced-header">
+                <span class="material-icons">tune</span>
+                <span>Advanced Options</span>
+              </div>
+
+              <div class="input-group">
+                <label for="vocabLanguage">Target Language</label>
+                <select id="vocabLanguage">
+                  <option value="en" selected>English</option>
+                  <option value="de">German</option>
+                  <option value="fr">French</option>
+                  <option value="es">Spanish</option>
+                  <option value="it">Italian</option>
+                  <option value="pt">Portuguese</option>
+                </select>
+              </div>
+
+              <div class="input-group">
+                <label for="vocabWordCount">Number of Words: <span id="wordCountValue">10</span></label>
+                <input type="range" id="vocabWordCount" min="5" max="20" value="10" class="slider">
+                <div class="slider-help">
+                  <span class="slider-label">Fewer</span>
+                  <span class="slider-label">More</span>
+                </div>
+              </div>
+
+              <div class="checkbox-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="vocabExamples" checked>
+                  <span class="checkmark"></span>
+                  Include example sentences
+                </label>
+
+                <label class="checkbox-label">
+                  <input type="checkbox" id="vocabImages">
+                  <span class="checkmark"></span>
+                  Include visual aids
+                </label>
+              </div>
+
+              <button class="button button-primary" id="generateAdvancedBtn">
+                <span class="material-icons button-icon">auto_stories</span>
+                Generate with Custom Settings
+              </button>
+            </div>
+          </div>
+        </div>
+    </div>
+</body>
+</html>
