@@ -101,8 +101,8 @@ function handleWebSocketMessage(event) {
     // Display in chat
     displayResponseInChat(response);
 
-    // Insert into slide (will implement later)
-    // insertResponseIntoSlide(response);
+    // Insert into slide
+    insertResponseIntoSlide(response);
 
   } catch (error) {
     console.error('Failed to parse WebSocket message:', error);
@@ -224,6 +224,205 @@ function removeLoadingMessage() {
   const loadingMsg = document.querySelector('.loading-message');
   if (loadingMsg) {
     loadingMsg.remove();
+  }
+}
+
+// ============================================================================
+// POWERPOINT SLIDE INSERTION
+// ============================================================================
+
+function insertResponseIntoSlide(response) {
+  // Don't insert error messages into slides
+  if (response.error) {
+    console.log('Error response, not inserting into slide');
+    return;
+  }
+
+  // Check if this is a vocabulary response
+  if (response.title && response.words && Array.isArray(response.words)) {
+    insertVocabularyIntoSlide(response);
+    return;
+  }
+
+  // For other content types, use generic insertion
+  insertGenericContentIntoSlide(response);
+}
+
+async function insertVocabularyIntoSlide(response) {
+  try {
+    console.log('Inserting vocabulary into slide...', response);
+
+    await PowerPoint.run(async (context) => {
+      const presentation = context.presentation;
+
+      // Load slides and add new one
+      presentation.slides.load('items');
+      await context.sync();
+
+      // slides.add() returns void, not a slide object!
+      presentation.slides.add();
+      await context.sync();
+
+      // Reload to get the new slide
+      presentation.slides.load('items');
+      await context.sync();
+
+      // Get the last slide (the one we just added)
+      const slide = presentation.slides.items[presentation.slides.items.length - 1];
+
+      // Load shapes collection
+      slide.load('shapes');
+      await context.sync();
+
+      // Delete default placeholder shapes ("Click to add title", etc.)
+      const shapesToDelete = slide.shapes.items.slice();
+      for (let shape of shapesToDelete) {
+        shape.delete();
+      }
+      await context.sync();
+
+      // Title text box
+      const titleShape = slide.shapes.addTextBox(response.title || 'Vocabulary');
+      titleShape.left = 50;
+      titleShape.top = 30;
+      titleShape.width = 600;
+      titleShape.height = 60;
+      await context.sync();
+
+      titleShape.textFrame.textRange.font.bold = true;
+      titleShape.textFrame.textRange.font.size = 32;
+      titleShape.textFrame.textRange.font.color = '#2c3e50';
+      await context.sync();
+
+      // Subtitle text box
+      if (response.subtitle) {
+        const subtitleShape = slide.shapes.addTextBox(response.subtitle);
+        subtitleShape.left = 50;
+        subtitleShape.top = 95;
+        subtitleShape.width = 600;
+        subtitleShape.height = 30;
+        await context.sync();
+
+        subtitleShape.textFrame.textRange.font.size = 16;
+        subtitleShape.textFrame.textRange.font.color = '#7f8c8d';
+        await context.sync();
+      }
+
+      // Add vocabulary words
+      let yPosition = 140;
+      const lineHeight = 70;
+
+      for (let index = 0; index < response.words.length; index++) {
+        const word = response.words[index];
+
+        // Word and translation
+        const wordText = `${index + 1}. ${word.word} — ${word.translation}`;
+        const wordShape = slide.shapes.addTextBox(wordText);
+        wordShape.left = 50;
+        wordShape.top = yPosition;
+        wordShape.width = 600;
+        wordShape.height = 30;
+        await context.sync();
+
+        wordShape.textFrame.textRange.font.size = 18;
+        wordShape.textFrame.textRange.font.bold = true;
+        wordShape.textFrame.textRange.font.color = '#34495e';
+        await context.sync();
+
+        // Definition
+        if (word.definition) {
+          const defShape = slide.shapes.addTextBox(word.definition);
+          defShape.left = 70;
+          defShape.top = yPosition + 30;
+          defShape.width = 580;
+          defShape.height = 35;
+          await context.sync();
+
+          defShape.textFrame.textRange.font.size = 14;
+          defShape.textFrame.textRange.font.color = '#5d6d7e';
+          await context.sync();
+        }
+
+        yPosition += lineHeight;
+      }
+
+      await context.sync();
+      console.log('Vocabulary slide created successfully');
+      addMessage('✓ Content added to new slide', 'ai');
+    });
+
+  } catch (error) {
+    console.error('Error inserting vocabulary into slide:', error);
+    addMessage('Error: Could not insert content into slide. ' + error.message, 'ai');
+  }
+}
+
+async function insertGenericContentIntoSlide(response) {
+  try {
+    console.log('Inserting generic content into slide...', response);
+
+    await PowerPoint.run(async (context) => {
+      const presentation = context.presentation;
+
+      // Load slides and add new one
+      presentation.slides.load('items');
+      await context.sync();
+
+      // slides.add() returns void
+      presentation.slides.add();
+      await context.sync();
+
+      // Reload to get the new slide
+      presentation.slides.load('items');
+      await context.sync();
+
+      // Get the last slide
+      const slide = presentation.slides.items[presentation.slides.items.length - 1];
+
+      // Load shapes
+      slide.load('shapes');
+      await context.sync();
+
+      // Delete default placeholder shapes
+      const shapesToDelete = slide.shapes.items.slice();
+      for (let shape of shapesToDelete) {
+        shape.delete();
+      }
+      await context.sync();
+
+      // Title
+      const title = response.title || 'Generated Content';
+      const titleShape = slide.shapes.addTextBox(title);
+      titleShape.left = 50;
+      titleShape.top = 30;
+      titleShape.width = 600;
+      titleShape.height = 60;
+      await context.sync();
+
+      titleShape.textFrame.textRange.font.bold = true;
+      titleShape.textFrame.textRange.font.size = 28;
+      await context.sync();
+
+      // Content (as formatted JSON for now)
+      const contentText = JSON.stringify(response, null, 2);
+      const contentShape = slide.shapes.addTextBox(contentText);
+      contentShape.left = 50;
+      contentShape.top = 100;
+      contentShape.width = 600;
+      contentShape.height = 400;
+      await context.sync();
+
+      contentShape.textFrame.textRange.font.size = 12;
+      contentShape.textFrame.textRange.font.name = 'Courier New';
+      await context.sync();
+
+      console.log('Generic content slide created successfully');
+      addMessage('✓ Content added to new slide', 'ai');
+    });
+
+  } catch (error) {
+    console.error('Error inserting generic content into slide:', error);
+    addMessage('Error: Could not insert content into slide. ' + error.message, 'ai');
   }
 }
 
@@ -507,14 +706,172 @@ function getClassContext() {
 // ============================================================================
 
 /*
-// These functions were part of the old vocabulary builder form interface
-// They are kept here for reference but are not currently used
+// REFERENCE: Old working slide insertion code from previous version
+// This shows the correct pattern for PowerPoint API usage
+// Key insights:
+// 1. slides.add() returns void, not a slide object
+// 2. Must reload slides collection after adding
+// 3. Get slide from slides.items[slides.items.length - 1]
+// 4. Delete default placeholder shapes before adding custom content
+// 5. Sync frequently after operations
 
-function updateSmartDefaultsDisplay() { ... }
-function toggleAdvancedOptions() { ... }
-function validateForm() { ... }
-function getFormData() { ... }
-async function generateVocabulary() { ... }
-function insertTextFallback(result) { ... }
-async function insertSlidesFromResult(result) { ... }
+async function insertSlidesFromResult(result) {
+  if (typeof PowerPoint === 'undefined') {
+    throw new Error('PowerPoint API is not available. Please make sure you are running in PowerPoint Desktop.');
+  }
+
+  if (!Office.context.requirements || !Office.context.requirements.isSetSupported) {
+    throw new Error('API requirements check not available. Please use a newer version of PowerPoint.');
+  }
+
+  const v13 = Office.context.requirements.isSetSupported('PowerPointApi', '1.3');
+  const isOnline = Office.context.diagnostics.platform === 'OfficeOnline';
+
+  if (!v13) {
+    return insertTextFallback(result);
+  }
+
+  try {
+    await PowerPoint.run(async (context) => {
+      const presentation = context.presentation;
+
+      // STEP 1: Load existing slides
+      presentation.slides.load('items');
+      await context.sync();
+
+      const titleSlideData = result.slides.find(s => s.type === 'title');
+
+      if (titleSlideData) {
+        const slides = presentation.slides;
+
+        if (typeof slides.add !== 'function') {
+          if (isOnline) {
+            return insertTextFallback(result);
+          }
+          throw new Error('slides.add() method not available. Please update to Office 2019 or Microsoft 365.');
+        }
+
+        // STEP 2: Add new slide (returns void, not a slide!)
+        slides.add();
+        await context.sync();
+
+        // STEP 3: Reload slides to get the new one
+        presentation.slides.load('items');
+        await context.sync();
+
+        // STEP 4: Get the last slide (the one we just added)
+        const titleSlide = presentation.slides.items[presentation.slides.items.length - 1];
+
+        // STEP 5: Load shapes collection
+        titleSlide.load('shapes');
+        await context.sync();
+
+        // STEP 6: Delete default placeholder shapes
+        const shapesToDelete = titleSlide.shapes.items.slice();
+        for (let shape of shapesToDelete) {
+          shape.delete();
+        }
+        await context.sync();
+
+        // STEP 7: Add custom title text box
+        const title = titleSlide.shapes.addTextBox(titleSlideData.title, {
+          left: 50,
+          top: 200,
+          width: 620,
+          height: 100
+        });
+        await context.sync();
+
+        title.textFrame.textRange.font.size = 44;
+        title.textFrame.textRange.font.bold = true;
+        title.textFrame.textRange.font.color = "#d13438";
+        await context.sync();
+
+        if (titleSlideData.subtitle) {
+          const subtitle = titleSlide.shapes.addTextBox(titleSlideData.subtitle, {
+            left: 50,
+            top: 320,
+            width: 620,
+            height: 60
+          });
+          await context.sync();
+
+          subtitle.textFrame.textRange.font.size = 20;
+          subtitle.textFrame.textRange.font.color = "#323130";
+          await context.sync();
+        }
+      }
+
+      // Add content slides (vocabulary words)
+      const contentData = result.slides.find(s => s.type === 'content');
+      if (contentData && contentData.content) {
+        for (let i = 0; i < contentData.content.length; i++) {
+          const word = contentData.content[i];
+
+          presentation.slides.add();
+          await context.sync();
+
+          presentation.slides.load('items');
+          await context.sync();
+
+          const wordSlide = presentation.slides.items[presentation.slides.items.length - 1];
+
+          wordSlide.load('shapes');
+          await context.sync();
+
+          const shapesToDelete = wordSlide.shapes.items.slice();
+          for (let shape of shapesToDelete) {
+            shape.delete();
+          }
+          await context.sync();
+
+          const wordTitle = wordSlide.shapes.addTextBox(word.word, {
+            left: 50,
+            top: 40,
+            width: 620,
+            height: 80
+          });
+          await context.sync();
+
+          wordTitle.textFrame.textRange.font.size = 40;
+          wordTitle.textFrame.textRange.font.bold = true;
+          wordTitle.textFrame.textRange.font.color = "#d13438";
+          await context.sync();
+
+          let bodyText = `Definition: ${word.definition}`;
+          if (word.translation) {
+            bodyText += `\n\nTranslation: ${word.translation}`;
+          }
+          if (word.example) {
+            bodyText += `\n\nExample: "${word.example}"`;
+          }
+
+          const body = wordSlide.shapes.addTextBox(bodyText, {
+            left: 50,
+            top: 140,
+            width: 620,
+            height: 360
+          });
+          await context.sync();
+
+          body.textFrame.textRange.font.size = 18;
+          body.textFrame.textRange.font.color = "#323130";
+          await context.sync();
+        }
+      }
+
+      await context.sync();
+    });
+  } catch (error) {
+    if (isOnline) {
+      try {
+        return await insertTextFallback(result);
+      } catch (fallbackError) {
+        throw new Error(`Failed to create slides and text fallback also failed: ${fallbackError.message}`);
+      }
+    }
+
+    throw new Error(`Failed to create slides: ${error.message}`);
+  }
+}
 */
