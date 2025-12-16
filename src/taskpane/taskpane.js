@@ -330,11 +330,28 @@ function handleSendMessage() {
   // Clear input
   messageInput.value = '';
 
-  // Simulate AI response (placeholder)
-  setTimeout(() => {
-    const dummyResponse = getDummyResponse(currentCategory, messageText);
-    addMessage(dummyResponse, 'ai');
-  }, 800);
+  // Build WebSocket message payload
+  const messagePayload = {
+    "user-id": USER_ID,
+    "channel-name": CHANNEL_NAME,
+    "conversation-id": null, // null for new conversations (will track later)
+    "type": currentCategory, // vocabulary, grammar, reading, etc.
+    "content": messageText,
+    "requirements": {}
+  };
+
+  console.log('Sending message with payload:', messagePayload);
+
+  // Add loading indicator
+  addLoadingMessage();
+
+  // Send via WebSocket
+  const sent = sendWebSocketMessage(messagePayload);
+
+  // If send failed, remove loading indicator
+  if (!sent) {
+    removeLoadingMessage();
+  }
 }
 
 function handleResourceClick() {
