@@ -23,109 +23,175 @@
     </section>
 
     <div id="app-body" style="display: none;">
-        <div class="container">
-          <div class="status" id="status"></div>
-
-          <div class="section">
-            <div class="section-title">Vocabulary Builder</div>
-
-            <!-- Essential Fields Only -->
-            <div class="input-group">
-              <label for="vocabTopic">Topic</label>
-              <input type="text" id="vocabTopic" placeholder="e.g., food, travel, business" required
-                     list="topicSuggestions" autocomplete="off">
-              <datalist id="topicSuggestions">
-                <option value="food and cooking">
-                <option value="travel and transport">
-                <option value="family and relationships">
-                <option value="work and business">
-                <option value="health and fitness">
-                <option value="home and living">
-                <option value="shopping and money">
-                <option value="hobbies and free time">
-                <option value="weather and nature">
-                <option value="technology and internet">
-              </datalist>
-            </div>
-
-            <div class="input-group">
-              <label for="vocabLevel">Student Level</label>
-              <select id="vocabLevel" required>
-                <option value="B1" selected>B1 - Intermediate (Recommended)</option>
-                <option value="A1">A1 - Beginner</option>
-                <option value="A2">A2 - Elementary</option>
-                <option value="B2">B2 - Upper Intermediate</option>
-                <option value="C1">C1 - Advanced</option>
-                <option value="C2">C2 - Proficient</option>
-              </select>
-            </div>
-
-            <!-- Smart Default Info -->
-            <div class="smart-defaults">
-              <span class="material-icons smart-icon">auto_awesome</span>
-              <span class="smart-text">Auto-selected: English, 10 words, with examples</span>
-            </div>
-
-            <!-- Main Action Buttons -->
-            <div class="button-row">
-              <button class="button button-primary button-main" id="generateBtn">
-                <span class="material-icons button-icon">auto_stories</span>
-                Quick Generate
-              </button>
-              <button class="button button-secondary" id="advancedBtn">
-                <span class="material-icons button-icon" id="advancedIcon">expand_more</span>
-                <span>More Options</span>
-              </button>
-            </div>
-
-            <!-- Advanced Options (Hidden by Default) -->
-            <div class="advanced-options" id="advancedOptions" style="display: none;">
-              <div class="advanced-header">
-                <span class="material-icons">tune</span>
-                <span>Advanced Options</span>
-              </div>
-
-              <div class="input-group">
-                <label for="vocabLanguage">Target Language</label>
-                <select id="vocabLanguage">
-                  <option value="en" selected>English</option>
-                  <option value="de">German</option>
-                  <option value="fr">French</option>
-                  <option value="es">Spanish</option>
-                  <option value="it">Italian</option>
-                  <option value="pt">Portuguese</option>
-                </select>
-              </div>
-
-              <div class="input-group">
-                <label for="vocabWordCount">Number of Words: <span id="wordCountValue">10</span></label>
-                <input type="range" id="vocabWordCount" min="5" max="20" value="10" class="slider">
-                <div class="slider-help">
-                  <span class="slider-label">Fewer</span>
-                  <span class="slider-label">More</span>
+        <!-- Chat Interface Container -->
+        <div class="chat-container">
+            <!-- Header: Category Chips -->
+            <div id="header" class="chat-header">
+                <div class="chip-group">
+                    <button class="chip active" data-category="vocabulary">
+                        <span class="material-icons chip-icon">book</span>
+                        Vocabulary
+                    </button>
+                    <button class="chip" data-category="quizzes">
+                        <span class="material-icons chip-icon">quiz</span>
+                        Quizzes
+                    </button>
+                    <button class="chip" data-category="homework">
+                        <span class="material-icons chip-icon">assignment</span>
+                        Homework
+                    </button>
+                    <button class="chip" data-category="grammar">
+                        <span class="material-icons chip-icon">spellcheck</span>
+                        Grammar
+                    </button>
+                    <button class="chip" data-category="reading">
+                        <span class="material-icons chip-icon">menu_book</span>
+                        Reading
+                    </button>
+                    <button class="chip" data-category="listening">
+                        <span class="material-icons chip-icon">headphones</span>
+                        Listening
+                    </button>
                 </div>
-              </div>
-
-              <div class="checkbox-group">
-                <label class="checkbox-label">
-                  <input type="checkbox" id="vocabExamples" checked>
-                  <span class="checkmark"></span>
-                  Include example sentences
-                </label>
-
-                <label class="checkbox-label">
-                  <input type="checkbox" id="vocabImages">
-                  <span class="checkmark"></span>
-                  Include visual aids
-                </label>
-              </div>
-
-              <button class="button button-primary" id="generateAdvancedBtn">
-                <span class="material-icons button-icon">auto_stories</span>
-                Generate with Custom Settings
-              </button>
             </div>
-          </div>
+
+            <!-- Context Bar -->
+            <div class="context-bar">
+                <span class="context-info">
+                    <span class="material-icons context-icon">school</span>
+                    <span id="contextDisplay">B1 English • Class 7A</span>
+                </span>
+                <button class="settings-icon-btn" id="settingsBtn" title="Edit class settings">
+                    <span class="material-icons">settings</span>
+                </button>
+            </div>
+
+            <!-- Body: Messages Area -->
+            <div id="body" class="chat-body">
+                <!-- Sample AI Message -->
+                <div class="message ai-message">
+                    <div class="message-avatar">
+                        <span class="material-icons">smart_toy</span>
+                    </div>
+                    <div class="message-content">
+                        <div class="message-text">
+                            Hello! I'm your AI teaching assistant. How can I help you today? Select a category above to get started.
+                        </div>
+                        <div class="message-time">Just now</div>
+                    </div>
+                </div>
+
+                <!-- Sample User Message -->
+                <div class="message user-message">
+                    <div class="message-content">
+                        <div class="message-text">
+                            Can you help me create a vocabulary list about food?
+                        </div>
+                        <div class="message-time">Just now</div>
+                    </div>
+                    <div class="message-avatar">
+                        <span class="material-icons">person</span>
+                    </div>
+                </div>
+
+                <!-- Sample AI Response -->
+                <div class="message ai-message">
+                    <div class="message-avatar">
+                        <span class="material-icons">smart_toy</span>
+                    </div>
+                    <div class="message-content">
+                        <div class="message-text">
+                            Of course! I'd be happy to help you create a vocabulary list about food. What level are your students? And would you like me to include example sentences and images?
+                        </div>
+                        <div class="message-time">Just now</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer: Input Area -->
+            <div id="footer" class="chat-footer">
+                <div class="input-container">
+                    <button class="resource-button" title="Include resources">
+                        <span class="material-icons">add_circle</span>
+                    </button>
+                    <input
+                        type="text"
+                        class="message-input"
+                        placeholder="Type your message..."
+                        aria-label="Message input"
+                    />
+                    <button class="send-button" title="Send message">
+                        <span class="material-icons">send</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div class="modal-overlay" id="settingsModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Class Settings</h3>
+                    <button class="modal-close" id="closeModalBtn">
+                        <span class="material-icons">close</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="settings-group">
+                        <label for="settingsLanguage">Target Language</label>
+                        <select id="settingsLanguage">
+                            <option value="English">English</option>
+                            <option value="German">German</option>
+                            <option value="French">French</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="Italian">Italian</option>
+                            <option value="Portuguese">Portuguese</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="settingsLevel">Language Level</label>
+                        <select id="settingsLevel">
+                            <option value="A1">A1 - Beginner</option>
+                            <option value="A2">A2 - Elementary</option>
+                            <option value="B1" selected>B1 - Intermediate</option>
+                            <option value="B2">B2 - Upper Intermediate</option>
+                            <option value="C1">C1 - Advanced</option>
+                            <option value="C2">C2 - Proficient</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="settingsClassName">Class Name</label>
+                        <input type="text" id="settingsClassName" placeholder="e.g., Class 7A" value="Class 7A">
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="settingsNativeLanguage">Native Language (Optional)</label>
+                        <select id="settingsNativeLanguage">
+                            <option value="">-- Not specified --</option>
+                            <option value="English">English</option>
+                            <option value="German">German</option>
+                            <option value="French">French</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="Italian">Italian</option>
+                            <option value="Portuguese">Portuguese</option>
+                            <option value="Chinese">Chinese</option>
+                            <option value="Arabic">Arabic</option>
+                            <option value="Russian">Russian</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="settingsAgeGroup">Student Age Range (Optional)</label>
+                        <input type="text" id="settingsAgeGroup" placeholder="e.g., 12-14">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="button button-secondary" id="cancelSettingsBtn">Cancel</button>
+                    <button class="button button-primary" id="saveSettingsBtn">Save</button>
+                </div>
+            </div>
         </div>
     </div>
 </body>
