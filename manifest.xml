@@ -18,7 +18,8 @@
   <IconUrl DefaultValue="https://teachers-center-powerpoint.onrender.com/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://teachers-center-powerpoint.onrender.com/assets/icon-64.png"/>
 
-  <SupportUrl DefaultValue="https://www.contoso.com/help"/>
+  <SupportUrl DefaultValue="https://teachers-center-powerpoint.onrender.com/assets/support.html"/>
+   
 
   <AppDomains>
     <AppDomain>https://teachers-center-powerpoint.onrender.com</AppDomain>
