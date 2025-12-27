@@ -4,7 +4,7 @@
 // WEBSOCKET CONNECTION CONFIGURATION
 // ============================================================================
 
-const WS_BACKEND_URL = 'ws://localhost:2000/ws';
+const WS_BACKEND_URL = 'wss://teachers-center-be.onrender.com/ws';
 const USER_ID = 123; // HARDCODED for Phase 1
 const CHANNEL_NAME = "powerpoint-session-001"; // HARDCODED for Phase 1
 const MAX_RECONNECT_ATTEMPTS = 5;

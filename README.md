@@ -2,6 +2,9 @@
 
 A PowerPoint add-in that generates vocabulary slides for language teachers. Creates interactive, AI-powered vocabulary presentations with definitions, translations, and examples.
 
+## TODO
+Phase 5: Error Handling // TODO stao
+
 ## Features
 
 - Generate vocabulary slides based on topic and student level
@@ -15,7 +18,7 @@ A PowerPoint add-in that generates vocabulary slides for language teachers. Crea
 - Node.js (v14 or higher)
 - npm (v6 or higher)
 - PowerPoint Desktop (Office 2016 or later, or Microsoft 365)
-- Backend API running on `http://localhost:2000`
+- Backend API running on `https://teachers-center-be.onrender.com`
 
 ## Important Limitations
 
@@ -79,7 +82,7 @@ The add-in communicates with a backend API to generate vocabulary content.
 
 ### Endpoint Configuration
 
-- **URL**: `http://localhost:2000/api/generate`
+- **URL**: `https://teachers-center-be.onrender.com/api/generate`
 - **Method**: POST
 - **Content-Type**: application/json
 
@@ -132,7 +135,7 @@ The add-in communicates with a backend API to generate vocabulary content.
 
 ### 1. Start the backend server
 
-Make sure your backend API is running on `http://localhost:2000` before testing.
+Make sure your backend API is running on `https://teachers-center-be.onrender.com` before testing.
 
 ### 2. Launch the add-in
 
@@ -242,7 +245,7 @@ This add-in requires **PowerPointApi 1.3** or higher. The following Office versi
 
 ### Backend connection errors
 
-- Verify backend is running on `http://localhost:2000`
+- Verify backend is running on `https://teachers-center-be.onrender.com`
 - Check CORS settings on backend
 - Review browser console for fetch errors
 

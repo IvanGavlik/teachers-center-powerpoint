@@ -1,0 +1,651 @@
+ now lets implement FE ... Step 1 before that take a look into
+send-one-time-ws-request test-ws.js ws-handler to see how implementation
+ work ... as result of step 1 i execpt your understaind of current
+implemenation and give me few examples of request not implementaion just
+ request data ... Step 2. take a look into FE project whic is power
+point add-in/plugin as result I want you to understand current
+implementaion and give me short descrption how FE currently connecnts
+and send request to BE ... in Step 3 lest plan implemenataion so fouc on
+ implemeneint basic hardoced values and displaying reponse in the chat
+and slide ... now we dont do any coding or implementation we foucs on
+study thiking deeply and planning
+
+Phase 1: Initial Understanding
+
+
+ Here is Claude's plan:
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ WebSocket Integration Plan: Frontend PowerPoint Add-in
+
+ STEP 1: Current Implementation Understanding
+
+ Backend WebSocket Architecture
+
+ Connection Endpoint: wss://teachers-center-be.onrender.com/ws
+
+ Message Flow:
+ 1. Client connects → Server ready
+ 2. Client sends JSON message → Server parses → ChatGPT API call → Server
+ responds with JSON
+ 3. Connection stays open for multiple messages
+
+ Request Message Format (from ws.clj:16-21):
+ {
+   "user-id": 123,                    // number - user identifier
+   "channel-name": "session-id",      // string - session/channel
+ identifier
+   "conversation-id": null,           // number|null - conversation ID
+ (null = new conversation)
+   "type": "generate-vocabulary",     // string - content type (converted
+ to keyword on backend)
+   "content": "user message here",    // string - the actual user
+ request/message
+   "requirements": {}                 // object - additional parameters
+ (optional)
+ }
+
+ Response Message Format (from test output):
+ {
+   "title": "Food Vocabulary",
+   "subtitle": "Level: A1 | 5 words",
+   "words": [
+     {
+       "word": "Apfel",
+       "definition": "Eine beliebte Frucht, die oft rot oder grün ist.",
+       "translation": "Apple"
+     }
+     // ... more words
+   ]
+ }
+
+ Supported Content Types (from handler.clj:36-40):
+ - "generate-vocabulary" → vocabulary lists
+ - "generate-grammar" → grammar content
+ - "generate-reading" → reading comprehension
+ - "generate-exercises" → exercises
+
+ Request Data Examples
+
+ 1. Vocabulary Generation:
+ {
+   "user-id": 123,
+   "channel-name": "powerpoint-session-001",
+   "conversation-id": null,
+   "type": "generate-vocabulary",
+   "content": "Generate 10 food vocabulary words for A1 German with
+ examples",
+   "requirements": {}
+ }
+
+ 2. Grammar Content:
+ {
+   "user-id": 123,
+   "channel-name": "powerpoint-session-001",
+   "conversation-id": null,
+   "type": "generate-grammar",
+   "content": "Create grammar exercises on present perfect, B1 English, 5
+ questions",
+   "requirements": {}
+ }
+
+ 3. Reading Comprehension:
+ {
+   "user-id": 123,
+   "channel-name": "powerpoint-session-001",
+   "conversation-id": null,
+   "type": "generate-reading",
+   "content": "Generate reading text about travel for A2 Spanish with 3
+ comprehension questions",
+   "requirements": {}
+ }
+
+ 4. Exercises:
+ {
+   "user-id": 123,
+   "channel-name": "powerpoint-session-001",
+   "conversation-id": null,
+   "type": "generate-exercises",
+   "content": "Create 5 fill-in-the-blank exercises for irregular verbs, B1
+  French",
+   "requirements": {}
+ }
+
+ 5. Follow-up Message (existing conversation):
+ {
+   "user-id": 123,
+   "channel-name": "powerpoint-session-001",
+   "conversation-id": 456,
+   "type": "generate-vocabulary",
+   "content": "Make it shorter, only 5 words",
+   "requirements": {}
+ }
+
+ 6. Multi-category Request:
+ {
+   "user-id": 123,
+   "channel-name": "powerpoint-session-001",
+   "conversation-id": null,
+   "type": "generate-quizzes",
+   "content": "Create a vocabulary quiz on food, 10 questions, A1 German",
+   "requirements": {}
+ }
+
+ ---
+ STEP 2: Frontend Current State
+
+ Project Details
+
+ - Path: C:\Users\ivang\Projects\teachers-center-powerpoint\
+ - Tech Stack: Vanilla JavaScript (no React/Vue/Angular), Office.js API
+ - Key Files:
+   - src/taskpane/taskpane.html - UI structure
+   - src/taskpane/taskpane.js - Application logic (9,464 bytes)
+   - src/taskpane/taskpane.css - Styling
+
+ Current Backend Communication: NONE
+
+ Status: Frontend has NO active backend integration
+ - All responses are mocked via getDummyResponse() function
+ (taskpane.js:176-187)
+ - No HTTP/WebSocket client code exists
+ - Backend URL is documented in README but unused:
+ https://teachers-center-be.onrender.com/api/generate
+
+ Current Message Flow (Mocked)
+
+ User types message
+   ↓
+ handleSendMessage() (lines 111-130)
+   ↓
+ addMessage(userText, 'user') - renders user message
+   ↓
+ setTimeout(800ms) - simulate delay
+   ↓
+ getDummyResponse(currentCategory) - returns preset text
+   ↓
+ addMessage(dummyText, 'ai') - renders AI response
+
+ UI Components
+
+ 1. Category Chips (6 categories):
+ - vocabulary, quizzes, homework, grammar, reading, listening
+ - Selected category tracked in currentCategory variable
+
+ 2. Context Bar:
+ - Displays: "{level} {language} • {className}"
+ - Example: "B1 English • Class 7A"
+ - Data stored in localStorage classContext object
+
+ 3. Chat Body:
+ - Message structure: avatar + content bubble + timestamp
+ - User messages: right-aligned
+ - AI messages: left-aligned
+ - Auto-scroll to bottom
+
+ 4. Input Footer:
+ - Text input field
+ - Send button
+ - "Add Resources" button (not yet functional)
+
+ Settings/Configuration
+
+ Stored in localStorage as classContext:
+ {
+   language: 'English',        // Dropdown: English, German, French,
+ Spanish, Italian, Portuguese
+   level: 'B1',                // Dropdown: A1, A2, B1, B2, C1, C2
+   className: 'Class 7A',      // Text input
+   nativeLanguage: '',         // Text input (optional)
+   ageGroup: ''                // Text input (optional)
+ }
+
+ Accessed via:
+ - loadSettings() - loads from localStorage (lines 199-212)
+ - saveSettings() - validates and saves to localStorage (lines 214-245)
+
+ Key JavaScript Functions
+
+ | Function                 | Location | Purpose                | Status
+                    |
+ |--------------------------|----------|------------------------|----------
+ -------------------|
+ | initializeUI()           | 26-88    | Setup event listeners  | ✅ Active
+                    |
+ | handleSendMessage()      | 111-130  | Process user input     | ✅ Active
+  (needs WebSocket) |
+ | addMessage(text, sender) | 138-174  | Render message in chat | ✅ Active
+                    |
+ | getDummyResponse()       | 176-187  | Mock AI response       | ⚠️ TO
+ REPLACE               |
+ | loadSettings()           | 199-212  | Load class context     | ✅ Active
+                    |
+ | saveSettings()           | 214-245  | Save class context     | ✅ Active
+                    |
+ | updateContextDisplay()   | 269-274  | Update context bar     | ✅ Active
+                    |
+
+ PowerPoint Slide Integration
+
+ Current Status: NOT IMPLEMENTED
+ - Office.js API loaded from CDN
+ - Permissions configured in manifest.xml: ReadWriteDocument
+ - No slide manipulation code exists (old code commented out at lines
+ 292-294)
+
+ ---
+ STEP 3: Implementation Plan
+
+ Overview
+
+ Implement WebSocket communication between the PowerPoint add-in frontend
+ and Clojure backend to replace mocked responses with real AI-generated
+ content. Focus on basic functionality with hardcoded values first, then
+ display responses in both chat and slides.
+
+ Architecture
+
+ PowerPoint Add-in (JavaScript)
+     ↓ WebSocket Connection
+ Backend (Clojure @ teachers-center-be.onrender.com/ws)
+     ↓ OpenAI API
+ ChatGPT
+     ↓ JSON Response
+ Backend → PowerPoint Add-in
+     ↓ Render in Chat + Insert into Slide
+
+ Phase 1: WebSocket Client Setup
+
+ File: src/taskpane/taskpane.js
+
+ 1.1 Add WebSocket Connection Management
+
+ Create WebSocket connection manager with:
+ - Connection URL: wss://teachers-center-be.onrender.com/ws
+ - Connection state tracking (connected, disconnected, connecting)
+ - Auto-reconnect logic on disconnect
+ - Error handling
+
+ Location: Add at top of file after Office.onReady
+
+ Variables to add:
+ let wsConnection = null;
+ let wsConnectionState = 'disconnected';  // 'disconnected' | 'connecting'
+ | 'connected'
+ let reconnectAttempts = 0;
+ const MAX_RECONNECT_ATTEMPTS = 5;
+
+ Functions to add:
+ - connectWebSocket() - Establish WebSocket connection
+ - disconnectWebSocket() - Close connection gracefully
+ - handleWebSocketMessage(event) - Process incoming messages
+ - handleWebSocketError(error) - Handle connection errors
+ - handleWebSocketClose() - Handle connection close + reconnect logic
+
+ 1.2 Connection Lifecycle
+
+ Office.onReady()
+   ↓
+ initializeUI()
+   ↓
+ connectWebSocket()
+   ↓
+ WebSocket 'open' event → wsConnectionState = 'connected'
+   ↓
+ Ready to send/receive messages
+
+ Phase 2: Message Sending
+
+ File: src/taskpane/taskpane.js
+
+ 2.1 Update handleSendMessage() Function
+
+ Current code (lines 111-130): Uses getDummyResponse()
+
+ New implementation:
+ 1. Get user input
+ 2. Get current settings from localStorage (classContext)
+ 3. Build JSON message payload
+ 4. Send via WebSocket
+ 5. Add user message to chat immediately
+ 6. Show loading indicator for AI response
+
+ 2.2 Message Payload Construction
+
+ Hardcoded values for Phase 1:
+ const messagePayload = {
+   "user-id": 123,  // HARDCODED for now
+   "channel-name": "powerpoint-session-001",  // HARDCODED for now
+   "conversation-id": null,  // null for new conversations (will track
+ later)
+   "type": currentCategory,  // Use selected category chip (vocabulary,
+ grammar, etc.)
+   "content": userMessage,  // User's typed message
+   "requirements": {}  // Empty for now
+ };
+
+ 2.3 Send Function
+
+ function sendWebSocketMessage(payload) {
+   if (wsConnectionState !== 'connected') {
+     // Show error: "Not connected to server"
+     return;
+   }
+
+   const jsonString = JSON.stringify(payload);
+   wsConnection.send(jsonString);
+ }
+
+ Phase 3: Message Receiving & Chat Display
+
+ File: src/taskpane/taskpane.js
+
+ 3.1 Response Handler
+
+ function handleWebSocketMessage(event) {
+   try {
+     const response = JSON.parse(event.data);
+
+     // Remove loading indicator
+     removeLoadingMessage();
+
+     // Display in chat
+     displayResponseInChat(response);
+
+     // Insert into slide (Phase 4)
+     insertResponseIntoSlide(response);
+
+   } catch (error) {
+     console.error('Failed to parse WebSocket message:', error);
+     addMessage('Error: Failed to process response', 'ai');
+   }
+ }
+
+ 3.2 Chat Display Logic
+
+ Different display formats based on response structure:
+
+ For Vocabulary Response:
+ function displayVocabularyResponse(response) {
+   // response has: title, subtitle, words[]
+   let chatMessage = `${response.title}\n${response.subtitle}\n\n`;
+
+   response.words.forEach((word, index) => {
+     chatMessage += `${index + 1}. ${word.word} - ${word.translation}\n`;
+     chatMessage += `   ${word.definition}\n\n`;
+   });
+
+   addMessage(chatMessage, 'ai');
+ }
+
+ For other content types: Format appropriately based on response structure
+
+ 3.3 Loading Indicator
+
+ Add temporary loading message while waiting for response:
+ function addLoadingMessage() {
+   const loadingHtml = `
+     <div class="message ai loading-message">
+       <div class="message-avatar">
+         <span class="material-icons">psychology</span>
+       </div>
+       <div class="message-content">
+         <div class="message-text">Generating content...</div>
+       </div>
+     </div>
+   `;
+   document.getElementById('body').insertAdjacentHTML('beforeend',
+ loadingHtml);
+   scrollToBottom();
+ }
+
+ function removeLoadingMessage() {
+   const loadingMsg = document.querySelector('.loading-message');
+   if (loadingMsg) loadingMsg.remove();
+ }
+
+ Phase 4: Slide Insertion
+
+ File: src/taskpane/taskpane.js
+
+ 4.1 Slide Insertion for Vocabulary
+
+ async function insertVocabularyIntoSlide(response) {
+   try {
+     await PowerPoint.run(async (context) => {
+       // Add new slide
+       const slide = context.presentation.slides.add();
+
+       // Title
+       const titleShape = slide.shapes.addTextBox(response.title);
+       titleShape.left = 50;
+       titleShape.top = 50;
+       titleShape.width = 600;
+       titleShape.height = 50;
+
+       // Subtitle
+       const subtitleShape = slide.shapes.addTextBox(response.subtitle);
+       subtitleShape.left = 50;
+       subtitleShape.top = 110;
+
+       // Vocabulary list
+       let yPosition = 170;
+       response.words.forEach((word, index) => {
+         const wordText = `${index + 1}. ${word.word} -
+ ${word.translation}\n   ${word.definition}`;
+         const wordShape = slide.shapes.addTextBox(wordText);
+         wordShape.left = 50;
+         wordShape.top = yPosition;
+         wordShape.width = 600;
+         yPosition += 80;
+       });
+
+       await context.sync();
+       console.log('Vocabulary inserted into slide');
+     });
+   } catch (error) {
+     console.error('Error inserting into slide:', error);
+     addMessage('Error: Could not insert into slide', 'ai');
+   }
+ }
+
+ 4.2 Generic Insert Function
+
+ function insertResponseIntoSlide(response) {
+   // Determine response type based on structure
+   if (response.words && Array.isArray(response.words)) {
+     insertVocabularyIntoSlide(response);
+   } else if (response.error) {
+     // Don't insert error messages into slides
+     console.log('Error response, not inserting into slide');
+   } else {
+     // Generic insertion for other types
+     insertGenericContentIntoSlide(response);
+   }
+ }
+
+ Phase 5: Error Handling // TODO stao
+
+ File: src/taskpane/taskpane.js
+
+ 5.1 WebSocket Error Scenarios
+
+ | Scenario               | Handling                                     |
+ |------------------------|----------------------------------------------|
+ | Connection fails       | Show "Cannot connect to server" in chat      |
+ | Connection drops       | Auto-reconnect with exponential backoff      |
+ | Message send fails     | Show "Failed to send message"                |
+ | Invalid JSON response  | Show "Invalid response from server"          |
+ | Backend error response | Display error message in chat                |
+ | Slide insertion fails  | Show error in chat, but chat message remains |
+
+ 5.2 Visual Feedback
+
+ Add connection status indicator to UI:
+ <div class="connection-status" id="connectionStatus">
+   <span class="status-dot"></span>
+   <span class="status-text">Connected</span>
+ </div>
+
+ CSS classes:
+ - .connected - green dot
+ - .disconnected - red dot
+ - .connecting - yellow dot (pulsing animation)
+
+ Phase 6: Configuration
+
+ File: src/taskpane/taskpane.js
+
+ 6.1 Backend URL Configuration
+
+ Add at top of file:
+ const WS_BACKEND_URL = 'wss://teachers-center-be.onrender.com/ws';  // HARDCODED for now
+ // TODO: Move to environment variable or config file
+
+ 6.2 User ID & Channel Generation
+
+ For Phase 1 (hardcoded):
+ const USER_ID = 123;  // HARDCODED
+ const CHANNEL_NAME = "powerpoint-session-001";  // HARDCODED
+
+ For future enhancement:
+ - Generate unique user ID per session
+ - Use PowerPoint document ID as channel name
+ - Persist conversation IDs for follow-ups
+
+ Implementation Order
+
+ Priority 1 - Core WebSocket:
+ 1. Add WebSocket connection manager
+ 2. Update handleSendMessage() to send WebSocket messages
+ 3. Add response handler to display in chat
+ 4. Add loading indicators
+
+ Priority 2 - Content Display:
+ 5. Format different response types for chat display
+ 6. Add error handling and user feedback
+
+ Priority 3 - Slide Integration:
+ 7. Implement vocabulary slide insertion
+ 8. Add generic content insertion for other types
+
+ Priority 4 - Polish:
+ 9. Add connection status indicator
+ 10. Improve error messages
+ 11. Add reconnection logic
+
+ Files to Modify
+
+ 1. src/taskpane/taskpane.js (PRIMARY)
+   - Add WebSocket connection management
+   - Replace getDummyResponse() with WebSocket send/receive
+   - Add response formatting logic
+   - Add slide insertion logic
+ 2. src/taskpane/taskpane.html (MINOR)
+   - Add connection status indicator element
+   - Add loading state styles (if needed)
+ 3. src/taskpane/taskpane.css (MINOR)
+   - Add connection status indicator styles
+   - Add loading message styles
+   - Add error message styles
+
+ Testing Approach
+
+ Test with hardcoded values:
+ 1. Open PowerPoint add-in
+ 2. Ensure WebSocket connects to wss://teachers-center-be.onrender.com/ws
+ 3. Select "Vocabulary" category chip
+ 4. Type: "Generate 5 food words for A1 German"
+ 5. Verify message sent with correct JSON structure
+ 6. Verify response appears in chat formatted nicely
+ 7. Verify new slide created with vocabulary content
+ 8. Test error scenarios (backend down, invalid message, etc.)
+
+ Different categories to test:
+ - Vocabulary
+ - Grammar
+ - Reading
+ - Exercises
+
+ Hardcoded Values Summary
+
+ For Phase 1 implementation:
+ - user-id: 123
+ - channel-name: "powerpoint-session-001"
+ - conversation-id: null (always new conversation)
+ - requirements: {} (always empty)
+ - Backend URL: wss://teachers-center-be.onrender.com/ws
+
+ Dynamic values:
+ - type: From selected category chip (vocabulary, grammar, reading, etc.)
+ - content: From user's message input
+
+ ---
+ Critical Success Criteria
+
+ ✅ WebSocket connection established to backend
+ ✅ User can type message and it sends to backend via WebSocket
+ ✅ Response displays in chat window formatted nicely
+ ✅ Vocabulary responses create new slides with content
+ ✅ Loading indicator shows while waiting for response
+ ✅ Connection errors display user-friendly messages
+ ✅ Categories (vocabulary, grammar, etc.) map to correct type field
+
+ ---
+ Future Enhancements (Not in Scope)
+
+ - Dynamic user ID generation
+ - Conversation ID tracking for follow-ups
+ - Environment variable for backend URL
+ - Support for "Add Resources" button
+ - Message history persistence
+ - Multiple conversation threads
+ - Conversation list/sidebar
+ - Edit and regenerate responses
+ - Advanced slide formatting options
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+ Would you like to proceed?
+
+ ❯ 1. Yes, and auto-accept edits
+   2. Yes, and manually approve edits
+   3. Type here to tell Claude what to change
+
+yes
+
+  Summary of Analysis & Plan
+
+  ✅ STEP 1: Backend WebSocket Implementation Understanding
+
+  Current Implementation Pattern:
+  - Connection: wss://teachers-center-be.onrender.com/ws
+  - Message Format: JSON with user-id, channel-name, conversation-id, type, content, requirements
+  - Response Format: JSON with structured data (e.g., vocabulary has title, subtitle, words[])
+
+  6 Request Data Examples Provided:
+  1. Vocabulary generation
+  2. Grammar content
+  3. Reading comprehension
+  4. Exercises
+  5. Follow-up messages (with conversation-id)
+  6. Multi-category requests
+
+  ✅ STEP 2: Frontend PowerPoint Add-in Understanding
+
+  Current State:
+  - Tech Stack: Vanilla JavaScript, Office.js API, no framework
+  - Backend Communication: NONE - all responses mocked via getDummyResponse()
+  - UI: Fully functional chat interface with 6 category chips, context bar, settings modal
+  - Key Files: taskpane.js (main logic), taskpane.html (UI), taskpane.css (styles)
+  - Settings: Stored in localStorage (language, level, className)
+
+  ✅ STEP 3: Detailed Implementation Plan
+
+  Phases outlined:
+  1. WebSocket Client Setup - Connection management, state tracking, reconnect logic
+  2. Message Sending - Replace getDummyResponse(), build JSON payloads, hardcoded values
+  3. Message Receiving - Parse responses, format for chat display, loading indicators
+  4. Slide Insertion - Use Office.js to create slides with vocabulary/content
+  5. Error Handling - Connection errors, visual feedback, status indicators
+  6. Configuration - Hardcoded values for Phase 1 (user-id: 123, channel-name: "powerpoint-session-001")
+
+  Files to modify: taskpane.js (primary), taskpane.html (minor), taskpane.css (minor)
