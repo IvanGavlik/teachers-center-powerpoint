@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Teachers Center – Support</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background-color: #f7f7f7;
+      color: #333;
+    }
+
+    header {
+      background-color: #ffffff;
+      padding: 20px;
+      border-bottom: 1px solid #ddd;
+      text-align: center;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    .container {
+      display: flex;
+      gap: 20px;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .column {
+      background-color: #ffffff;
+      padding: 20px;
+      border-radius: 6px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    .left,
+    .right {
+      width: 25%;
+    }
+
+    .middle {
+      width: 50%;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin-top: 0;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 8px;
+    }
+
+    h3 {
+      font-size: 15px;
+      margin-bottom: 6px;
+    }
+
+    p {
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    ul {
+      padding-left: 18px;
+      font-size: 14px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    a {
+      color: #0066cc;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .version {
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+
+    footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 13px;
+      color: #777;
+    }
+
+    @media (max-width: 900px) {
+      .container {
+        flex-direction: column;
+      }
+
+      .left,
+      .middle,
+      .right {
+        width: 100%;
+      }
+    }
+	
+	
+  .support-form {
+    max-width: 420px;
+    margin: 0 auto;
+    font-family: Arial, sans-serif;
+  }
+
+  .support-form label {
+    font-weight: 600;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .support-form input,
+  .support-form select,
+  .support-form textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+  box-sizing: border-box;
+
+  /* Normalize select appearance */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: #fff;
+  }
+
+  .support-form textarea {
+    resize: vertical;
+	min-height: 140px;
+  line-height: 1.4;
+  }
+
+  .support-form button {
+    background-color: #d32f2f;
+    color: #fff;
+    border: none;
+    padding: 10px 16px;
+    font-size: 15px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .support-form button:hover {
+    background-color: #b71c1c;
+  }
+
+  .form-status {
+    margin-top: 12px;
+    font-size: 14px;
+    text-align: center;
+  }
+	
+  </style>
+  
+  
+  
+  
+  
+</head>
+
+<body>
+
+<header>
+  <h1>Teachers Center – PowerPoint Add-in Support</h1>
+  <p>Find help, documentation, tutorials, and support resources</p>
+</header>
+
+<div class="container">
+
+  <!-- LEFT COLUMN -->
+  <div class="column left">
+    <h2>Documentation & Help</h2>
+
+    <h3>📘 User Guide</h3>
+    <p>
+      Learn how to use the Teachers Center PowerPoint Add-in step by step.
+    </p>
+    <ul>
+      <li>Installing and enabling the add-in</li>
+      <li>Using the AI chat during lessons</li>
+      <li>Creating teaching materials</li>
+      <li>Best practices for teachers</li>
+    </ul>
+    <p><a href="#">Open User Guide</a></p>
+
+    <h3>🎥 Video Tutorials</h3>
+    <ul>
+      <li>Getting started in under 5 minutes</li>
+      <li>Using AI chat inside PowerPoint</li>
+      <li>Preparing lessons faster</li>
+    </ul>
+    <p><a href="#">Watch tutorials</a></p>
+
+    <h3>❓ FAQ</h3>
+    <p><strong>Do I need an account?</strong><br>
+      Some features work immediately; advanced features may require sign-in.
+    </p>
+    <p><strong>Does it work offline?</strong><br>
+      AI features require an internet connection.
+    </p>
+    <p><strong>Which PowerPoint versions are supported?</strong><br>
+      Windows, macOS, and PowerPoint for the web.
+    </p>
+    <p><a href="#">See all FAQs</a></p>
+  </div>
+
+  <!-- MIDDLE COLUMN -->
+  <div class="column middle">
+    <h2>Report an Issue</h2>
+
+    <p>
+      If something isn’t working as expected, please let us know.
+      Providing detailed information helps us resolve issues faster.
+    </p>
+
+    <p>Please include:</p>
+    <ul>
+      <li>What you were trying to do</li>
+      <li>What went wrong</li>
+      <li>Any error messages</li>
+      <li>Your PowerPoint version and operating system</li>
+    </ul>
+
+    <h3>📩 Contact Support</h3>
+    <p>
+      Use the support form below to report bugs, ask questions,
+      or suggest improvements. We usually respond within 1–2 business days.
+    </p>
+	
+<form id="supportForm" class="support-form">
+  <label>Name</label>
+  <input type="text" id="name" required />
+		<p> </p>
+  <label>Email</label>
+  <input type="email" id="email" required />
+		<p> </p>
+  <label>Issue Type</label>
+  <select id="type">
+    <option value="bug">Bug</option>
+    <option value="question">Question</option>
+    <option value="feature">Feature Request</option>
+  </select>
+		<p> </p>
+  <label>Description</label>
+  <textarea id="message" rows="4" required></textarea>
+
+	<p> </p>
+  <button type="submit">Send Support Request</button>
+
+  <div id="formStatus" class="form-status"></div>
+</form>
+
+	
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div class="column right">
+    <h2>Version History</h2>
+
+    <div class="version">
+      <strong>v1.0.0 – Initial Release</strong>
+      <ul>
+        <li>First public release</li>
+        <li>AI-powered chat</li>
+        <li>Secure backend integration</li>
+      </ul>
+    </div>
+
+    <div class="version">
+      <strong>v1.1.0 – Improvements</strong>
+      <ul>
+        <li>Performance enhancements</li>
+        <li>Bug fixes</li>
+        <li>UI refinements</li>
+      </ul>
+    </div>
+
+    <div class="version">
+      <strong>Upcoming</strong>
+      <ul>
+        <li>Advanced lesson planning</li>
+        <li>Improved AI responses</li>
+        <li>More teacher tools</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  © Teachers Center. All rights reserved.
+</footer>
+
+</body>
+
+
+<script>
+  const SUPPORT_ENDPOINT_URL = "https://teachers-center-be.onrender.com/srv-ctrv0kjtq21c7393fv40";
+
+  document.getElementById("supportForm").addEventListener("submit", async function (event) {
+    event.preventDefault();
+
+    const status = document.getElementById("formStatus");
+    status.textContent = "Sending...";
+    status.style.color = "#333";
+
+    const payload = {
+      name: document.getElementById("name").value,
+      email: document.getElementById("email").value,
+      type: document.getElementById("type").value,
+      message: document.getElementById("message").value,
+      source: "PowerPoint Add-in Support"
+    };
+
+    try {
+      const response = await fetch(SUPPORT_ENDPOINT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error("Request failed");
+      }
+
+      status.textContent = "Thank you! Your message has been sent.";
+      status.style.color = "green";
+      document.getElementById("supportForm").reset();
+
+    } catch (error) {
+      console.error(error);
+      status.textContent = "Failed to send message. Please try again later.";
+      status.style.color = "red";
+    }
+  });
+</script>
+
+
+
+</html>
