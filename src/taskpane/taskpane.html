@@ -23,8 +23,36 @@
     </section>
 
     <div id="app-body" style="display: none;">
-        <!-- Chat Interface Container -->
-        <div class="chat-container">
+        <!-- Launcher View (shown by default) -->
+        <div id="launcher-view" class="launcher-container">
+            <div class="launcher-header">
+                <span class="material-icons launcher-logo">school</span>
+                <h1>Teachers Center</h1>
+            </div>
+
+            <div class="launcher-body">
+                <p class="launcher-description">
+                    Create vocabulary slides, quizzes, and more with AI assistance.
+                </p>
+
+                <button id="openDialogBtn" class="open-dialog-btn">
+                    <span class="material-icons">open_in_new</span>
+                    Open Teachers Center
+                </button>
+
+                <p class="launcher-hint">
+                    Opens in a separate window for a better experience
+                </p>
+            </div>
+
+            <div class="launcher-status" id="launcherStatus">
+                <span class="material-icons status-icon">info</span>
+                <span id="statusText">Ready</span>
+            </div>
+        </div>
+
+        <!-- Original Chat Interface (hidden, kept for reference) -->
+        <div id="chat-view" class="chat-container" style="display: none;">
             <!-- Header: Category Chips -->
             <div id="header" class="chat-header">
                 <div class="chip-group">

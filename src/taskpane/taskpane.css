@@ -6,6 +6,117 @@
   padding: 0;
 }
 
+/* =====================================
+   LAUNCHER VIEW - Dialog Opener
+   ===================================== */
+.launcher-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: linear-gradient(180deg, #faf9f8 0%, #f3f2f1 100%);
+}
+
+.launcher-header {
+  background: linear-gradient(135deg, #d13438 0%, #b7472a 100%);
+  color: white;
+  padding: 24px 20px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.launcher-logo {
+  font-size: 48px;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.launcher-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.launcher-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  text-align: center;
+}
+
+.launcher-description {
+  font-size: 14px;
+  color: #605e5c;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.open-dialog-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 28px;
+  background-color: #d13438;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(209, 52, 56, 0.3);
+}
+
+.open-dialog-btn:hover {
+  background-color: #b7472a;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(209, 52, 56, 0.4);
+}
+
+.open-dialog-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(209, 52, 56, 0.3);
+}
+
+.open-dialog-btn .material-icons {
+  font-size: 20px;
+}
+
+.launcher-hint {
+  font-size: 12px;
+  color: #a19f9d;
+  margin-top: 12px;
+}
+
+.launcher-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background-color: white;
+  border-top: 1px solid #edebe9;
+  font-size: 12px;
+  color: #605e5c;
+}
+
+.launcher-status .status-icon {
+  font-size: 16px;
+  color: #0078d4;
+}
+
+.launcher-status.success .status-icon {
+  color: #107c10;
+}
+
+.launcher-status.error .status-icon {
+  color: #a80000;
+}
+
 html,
 body {
   width: 100%;

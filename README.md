@@ -2,6 +2,16 @@
 
 A PowerPoint add-in that generates vocabulary slides for language teachers. Creates interactive, AI-powered vocabulary presentations with definitions, translations, and examples.
 
+## Note
+- now we have two versions dev manifets and manifes (production) 
+- also package json have to be updated
+- on second step
+	 2. Terminal 1 - Start dev server:
+  npm run dev-server
+
+  3. Terminal 2 - Start with dev manifest:
+  npm run start:dev
+
 ## TODO
 Phase 5: Error Handling // TODO stao
 

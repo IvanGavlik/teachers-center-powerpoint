@@ -29,17 +29,223 @@ let classContext = {
   ageGroup: ''
 };
 
+// Dialog reference
+let dialog = null;
+
 Office.onReady((info) => {
   if (info.host === Office.HostType.PowerPoint) {
     document.getElementById("sideload-msg").style.display = "none";
     document.getElementById("app-body").style.display = "block";
 
+    // Initialize launcher view
+    initializeLauncher();
+
+    // Keep original initialization for chat view (if we switch to it)
     loadSettings();
     initializeUI();
     updateContextDisplay();
-    connectWebSocket();
+    // Don't auto-connect WebSocket - will connect when dialog opens
+    // connectWebSocket();
   }
 });
+
+// ============================================================================
+// DIALOG MANAGEMENT
+// ============================================================================
+
+function initializeLauncher() {
+  const openDialogBtn = document.getElementById('openDialogBtn');
+  if (openDialogBtn) {
+    openDialogBtn.addEventListener('click', openDialog);
+  }
+  updateLauncherStatus('Ready to launch', 'info');
+}
+
+function openDialog() {
+  updateLauncherStatus('Opening dialog...', 'info');
+
+  // Get the dialog URL (same origin as the add-in)
+  const dialogUrl = window.location.origin + '/dialog.html';
+
+  console.log('Opening dialog at:', dialogUrl);
+
+  Office.context.ui.displayDialogAsync(
+    dialogUrl,
+    {
+      height: 70,  // 70% of screen height
+      width: 60,   // 60% of screen width
+      displayInIframe: false  // Open in separate window
+    },
+    (result) => {
+      if (result.status === Office.AsyncResultStatus.Failed) {
+        console.error('Failed to open dialog:', result.error.message);
+        updateLauncherStatus('Failed to open: ' + result.error.message, 'error');
+        return;
+      }
+
+      dialog = result.value;
+      updateLauncherStatus('Dialog opened', 'success');
+
+      // Handle messages from the dialog
+      dialog.addEventHandler(Office.EventType.DialogMessageReceived, handleDialogMessage);
+
+      // Handle dialog closed
+      dialog.addEventHandler(Office.EventType.DialogEventReceived, handleDialogEvent);
+    }
+  );
+}
+
+function handleDialogMessage(arg) {
+  console.log('Message from dialog:', arg.message);
+
+  try {
+    const message = JSON.parse(arg.message);
+
+    switch (message.type) {
+      case 'close':
+        console.log('Dialog requested close');
+        if (dialog) {
+          dialog.close();
+          dialog = null;
+        }
+        updateLauncherStatus('Dialog closed', 'info');
+        break;
+
+      case 'generate':
+        console.log('Generate request:', message.content);
+        updateLauncherStatus('Processing: ' + message.content.substring(0, 30) + '...', 'info');
+        // Here we would normally call the WebSocket and insert slides
+        // For now, just log it
+        handleGenerateRequest(message);
+        break;
+
+      default:
+        console.log('Unknown message type:', message.type);
+    }
+  } catch (error) {
+    console.error('Failed to parse dialog message:', error);
+  }
+}
+
+function handleDialogEvent(arg) {
+  console.log('Dialog event:', arg);
+
+  switch (arg.error) {
+    case 12002: // Dialog closed by user clicking X
+      console.log('Dialog closed by user');
+      dialog = null;
+      updateLauncherStatus('Dialog closed', 'info');
+      break;
+
+    case 12003: // Dialog navigated to different domain
+      console.log('Dialog navigation error');
+      updateLauncherStatus('Navigation error', 'error');
+      break;
+
+    case 12006: // Dialog closed programmatically
+      console.log('Dialog closed programmatically');
+      dialog = null;
+      updateLauncherStatus('Ready', 'info');
+      break;
+
+    default:
+      console.log('Unknown dialog event:', arg.error);
+      updateLauncherStatus('Dialog event: ' + arg.error, 'info');
+  }
+}
+
+function handleGenerateRequest(message) {
+  // This is where we would:
+  // 1. Send to WebSocket backend
+  // 2. Get response
+  // 3. Show preview in dialog (send message back)
+  // 4. On user confirmation, insert slides
+
+  // For now, just demonstrate with a test slide
+  console.log('Would generate content for:', message.content);
+  updateLauncherStatus('Received: ' + message.content.substring(0, 40), 'success');
+
+  // TODO: Connect to WebSocket and handle response
+  // For demo, we'll just insert a test slide
+  insertTestSlide(message.content);
+}
+
+async function insertTestSlide(userMessage) {
+  try {
+    await PowerPoint.run(async (context) => {
+      const presentation = context.presentation;
+
+      presentation.slides.load('items');
+      await context.sync();
+
+      presentation.slides.add();
+      await context.sync();
+
+      presentation.slides.load('items');
+      await context.sync();
+
+      const slide = presentation.slides.items[presentation.slides.items.length - 1];
+
+      slide.load('shapes');
+      await context.sync();
+
+      // Delete default shapes
+      const shapesToDelete = slide.shapes.items.slice();
+      for (let shape of shapesToDelete) {
+        shape.delete();
+      }
+      await context.sync();
+
+      // Add title
+      const titleShape = slide.shapes.addTextBox('Dialog Test');
+      titleShape.left = 50;
+      titleShape.top = 50;
+      titleShape.width = 600;
+      titleShape.height = 60;
+      await context.sync();
+
+      titleShape.textFrame.textRange.font.bold = true;
+      titleShape.textFrame.textRange.font.size = 32;
+      titleShape.textFrame.textRange.font.color = '#d13438';
+      await context.sync();
+
+      // Add user message
+      const contentShape = slide.shapes.addTextBox('User requested: ' + userMessage);
+      contentShape.left = 50;
+      contentShape.top = 130;
+      contentShape.width = 600;
+      contentShape.height = 200;
+      await context.sync();
+
+      contentShape.textFrame.textRange.font.size = 18;
+      await context.sync();
+
+      console.log('Test slide created');
+      updateLauncherStatus('Slide created!', 'success');
+    });
+  } catch (error) {
+    console.error('Error creating slide:', error);
+    updateLauncherStatus('Error: ' + error.message, 'error');
+  }
+}
+
+function updateLauncherStatus(text, type = 'info') {
+  const statusEl = document.getElementById('launcherStatus');
+  const textEl = document.getElementById('statusText');
+
+  if (textEl) {
+    textEl.textContent = text;
+  }
+
+  if (statusEl) {
+    statusEl.classList.remove('success', 'error');
+    if (type === 'success') {
+      statusEl.classList.add('success');
+    } else if (type === 'error') {
+      statusEl.classList.add('error');
+    }
+  }
+}
 
 // ============================================================================
 // WEBSOCKET CONNECTION MANAGEMENT
