@@ -9,6 +9,16 @@
 import './dialog.css';
 
 // ============================================
+// WEBSOCKET CONFIGURATION
+// ============================================
+
+// URL injected by webpack based on environment (dev/prod)
+const WS_URL = process.env.WS_URL;
+const USER_ID = 'user-123';  // TODO: implement proper user management
+const CHANNEL_NAME = 'powerpoint-dialog';
+const MAX_RECONNECT_ATTEMPTS = 3;
+
+// ============================================
 // STATE MANAGEMENT
 // ============================================
 
@@ -38,6 +48,12 @@ const state = {
         nativeLanguage: '',
         ageGroup: ''
     },
+
+    // WebSocket state
+    ws: null,
+    wsState: 'disconnected', // 'disconnected' | 'connecting' | 'connected'
+    reconnectAttempts: 0,
+    conversationId: null,
 
     // UI elements (cached after init)
     elements: {}
@@ -89,6 +105,11 @@ function initializeDialog() {
         Office.EventType.DialogParentMessageReceived,
         handleParentMessage
     );
+
+    // Connect to WebSocket backend (delayed to allow page to fully load)
+    setTimeout(() => {
+        connectWebSocket();
+    }, 500);
 
     console.log('Dialog initialized');
 }
@@ -178,14 +199,6 @@ function handleSend() {
     // Show user message immediately
     addUserMessage(content);
 
-    // Send to parent for processing (include current state)
-    sendToParent({
-        type: 'generate',
-        content: content,
-        category: detectCategory(content),
-        state: state.isInPreviewMode ? 'in-preview' : 'idle'
-    });
-
     // Clear input
     messageInput.value = '';
     messageInput.style.height = 'auto';
@@ -193,9 +206,22 @@ function handleSend() {
     // Show progress in preview area
     state.isProcessing = true;
     showProgressInPreviewArea('Generating content...', 0);
+
+    // Send to WebSocket backend
+    const sent = sendWebSocketMessage({
+        type: 'generate',
+        content: content,
+        category: detectCategory(content)
+    });
+
+    // If WebSocket send failed, try to reconnect and show error
+    if (!sent) {
+        connectWebSocket();
+    }
 }
 
 function handleClose() {
+    disconnectWebSocket();
     sendToParent({ type: 'close' });
 }
 
@@ -206,6 +232,7 @@ function handleNewChat() {
     state.currentSlideIndex = 0;
     state.skippedSlides.clear();
     state.isProcessing = false;
+    state.conversationId = null; // New conversation ID will be generated on next message
 
     // Hide preview area
     hidePreviewArea();
@@ -227,7 +254,214 @@ function detectCategory(content) {
 }
 
 // ============================================
-// PARENT COMMUNICATION
+// WEBSOCKET CONNECTION
+// ============================================
+
+function connectWebSocket() {
+    if (state.ws && state.wsState === 'connected') {
+        console.log('WebSocket already connected');
+        return;
+    }
+
+    // Check if WebSocket URL is configured
+    if (!WS_URL) {
+        console.warn('WebSocket URL not configured, skipping connection');
+        state.wsState = 'disconnected';
+        return;
+    }
+
+    state.wsState = 'connecting';
+    console.log('Connecting to WebSocket:', WS_URL);
+
+    try {
+        state.ws = new WebSocket(WS_URL);
+    } catch (error) {
+        console.error('Failed to create WebSocket:', error);
+        state.wsState = 'disconnected';
+        return;
+    }
+
+    state.ws.onopen = () => {
+        console.log('WebSocket connected');
+        state.wsState = 'connected';
+        state.reconnectAttempts = 0;
+    };
+
+    state.ws.onmessage = (event) => {
+        console.log('WebSocket message received:', event.data);
+        try {
+            handleWebSocketMessage(event.data);
+        } catch (error) {
+            console.error('Error handling WebSocket message:', error);
+        }
+    };
+
+    state.ws.onclose = (event) => {
+        console.log('WebSocket closed:', event.code, event.reason);
+        state.wsState = 'disconnected';
+        state.ws = null;
+
+        // Attempt reconnection if not intentional close
+        if (event.code !== 1000 && state.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            state.reconnectAttempts++;
+            console.log(`Reconnecting (attempt ${state.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+            setTimeout(connectWebSocket, 2000 * state.reconnectAttempts);
+        }
+    };
+
+    state.ws.onerror = (error) => {
+        console.warn('WebSocket error (backend may not be running):', error);
+        // Don't set state here - onclose will be called next
+    };
+}
+
+function disconnectWebSocket() {
+    if (state.ws) {
+        state.ws.close(1000, 'User closed dialog');
+        state.ws = null;
+        state.wsState = 'disconnected';
+    }
+}
+
+function sendWebSocketMessage(message) {
+    if (!state.ws || state.wsState !== 'connected') {
+        console.error('WebSocket not connected, cannot send message. State:', state.wsState);
+        showError('Not connected to server. Make sure the backend is running and refresh the dialog.');
+        state.isProcessing = false;
+        return false;
+    }
+
+    try {
+        // Generate conversation ID if not exists
+        if (!state.conversationId) {
+            state.conversationId = `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        }
+
+        // Format message for backend
+        const wsMessage = {
+            'user-id': USER_ID,
+            'channel-name': CHANNEL_NAME,
+            'conversation-id': state.conversationId,
+            type: message.type || 'generate',
+            content: message.content,
+            requirements: {
+                category: message.category || 'general',
+                language: state.settings.language,
+                level: state.settings.level,
+                nativeLanguage: state.settings.nativeLanguage || null,
+                ageGroup: state.settings.ageGroup || null,
+                className: state.settings.className || null
+            }
+        };
+
+        console.log('Sending WebSocket message:', wsMessage);
+        state.ws.send(JSON.stringify(wsMessage));
+        return true;
+    } catch (error) {
+        console.error('Failed to send WebSocket message:', error);
+        showError('Failed to send message. Please try again.');
+        state.isProcessing = false;
+        return false;
+    }
+}
+
+function handleWebSocketMessage(data) {
+    try {
+        const message = JSON.parse(data);
+        console.log('Parsed WebSocket message:', message);
+
+        // Handle different message types from backend
+        // Check for known fields first (backend may not always send 'type')
+        if (message['requirements-not-meet']) {
+            // Backend needs more information
+            hideProgress();
+            addAIMessage(message['requirements-not-meet']);
+            state.isProcessing = false;
+            return;
+        }
+
+        if (message.slides || message.data) {
+            // Backend sent slides
+            const slides = transformBackendSlides(message.slides || message.data);
+            if (slides && slides.length > 0) {
+                showSlidePreview(slides, message.summary || 'Generated Slides');
+            } else {
+                showError('No slides generated. Please try a different request.');
+                state.isProcessing = false;
+            }
+            return;
+        }
+
+        if (message.error || message.message) {
+            // Backend sent an error or info message
+            hideProgress();
+            if (message.error) {
+                showError(message.error);
+            } else {
+                addAIMessage(message.message);
+            }
+            state.isProcessing = false;
+            return;
+        }
+
+        // Handle by explicit type field
+        switch (message.type) {
+            case 'progress':
+                updateProgressInPreviewArea(message.stage || message.message, message.percent || 0);
+                break;
+
+            case 'slides':
+            case 'result':
+                const slides = transformBackendSlides(message.slides || message.data);
+                if (slides && slides.length > 0) {
+                    showSlidePreview(slides, message.summary || 'Generated Slides');
+                } else {
+                    showError('No slides generated. Please try a different request.');
+                    state.isProcessing = false;
+                }
+                break;
+
+            case 'error':
+                hideProgress();
+                showError(message.message || 'An error occurred');
+                state.isProcessing = false;
+                break;
+
+            case 'connected':
+                console.log('Backend confirmed connection');
+                break;
+
+            default:
+                console.log('Unknown WebSocket message type:', message.type);
+                // If we got here with no handler, stop processing state
+                hideProgress();
+                state.isProcessing = false;
+        }
+    } catch (error) {
+        console.error('Failed to parse WebSocket message:', error);
+        hideProgress();
+        state.isProcessing = false;
+    }
+}
+
+function transformBackendSlides(backendSlides) {
+    // Transform backend slide format to our internal format
+    // Backend format may vary - adjust as needed
+    if (!backendSlides || !Array.isArray(backendSlides)) {
+        return [];
+    }
+
+    return backendSlides.map(slide => ({
+        type: slide.type || 'Content',
+        title: slide.title || '',
+        subtitle: slide.subtitle || '',
+        content: slide.content || slide.body || '',
+        example: slide.example || slide['example-sentence'] || ''
+    }));
+}
+
+// ============================================
+// PARENT COMMUNICATION (for PowerPoint API)
 // ============================================
 
 function sendToParent(message) {

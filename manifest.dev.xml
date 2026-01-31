@@ -22,8 +22,13 @@
 
   <AppDomains>
     <AppDomain>https://localhost:3000</AppDomain>
+    <!-- Local backend (port 2000) -->
+    <AppDomain>http://localhost:2000</AppDomain>
+    <AppDomain>ws://localhost:2000</AppDomain>
+    <!-- Production backend (commented for local dev)
     <AppDomain>https://teachers-center-be.onrender.com</AppDomain>
     <AppDomain>wss://teachers-center-be.onrender.com</AppDomain>
+    -->
   </AppDomains>
 
   <Hosts>

@@ -4,7 +4,8 @@
 // WEBSOCKET CONNECTION CONFIGURATION
 // ============================================================================
 
-const WS_BACKEND_URL = 'wss://teachers-center-be.onrender.com/ws';
+// URL injected by webpack based on environment (dev/prod)
+const WS_BACKEND_URL = process.env.WS_URL;
 const USER_ID = 123; // HARDCODED for Phase 1
 const CHANNEL_NAME = "powerpoint-session-001"; // HARDCODED for Phase 1
 const MAX_RECONNECT_ATTEMPTS = 5;
