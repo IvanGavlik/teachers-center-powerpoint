@@ -5,6 +5,9 @@
  * Implements Claude Code-style preview-then-execute workflow
  */
 
+// Import CSS for webpack bundling
+import './dialog.css';
+
 // ============================================
 // STATE MANAGEMENT
 // ============================================
@@ -47,7 +50,6 @@ function initializeDialog() {
         welcomeState: document.getElementById('welcomeState'),
         previewArea: document.getElementById('previewArea'),
         messageInput: document.getElementById('messageInput'),
-        sendBtn: document.getElementById('sendBtn'),
         quickActions: document.getElementById('quickActions'),
         closeBtn: document.getElementById('closeBtn'),
         settingsBtn: document.getElementById('settingsBtn'),
@@ -68,16 +70,12 @@ function initializeDialog() {
 }
 
 function setupEventListeners() {
-    const { messageInput, sendBtn, quickActions, closeBtn, settingsBtn, newChatBtn, menuBtn } = state.elements;
+    const { messageInput, quickActions, closeBtn, settingsBtn, newChatBtn, menuBtn } = state.elements;
 
-    // Send button
-    sendBtn.addEventListener('click', handleSend);
-
-    // Enter key to send (plain Enter sends, Shift+Enter for newline)
-    messageInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSend();
+    // Handle window resize - keep preview visible
+    window.addEventListener('resize', () => {
+        if (state.isInPreviewMode && state.previewElement) {
+            state.previewElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     });
 
@@ -121,20 +119,27 @@ function handleSend() {
 
     if (!content || state.isProcessing) return;
 
+    // If there's an existing preview, dismiss it first
+    if (state.isInPreviewMode && state.slides.length > 0) {
+        const skippedCount = state.slides.length - state.skippedSlides.size;
+        dismissPreview(`${skippedCount} slide${skippedCount !== 1 ? 's' : ''} not inserted`);
+    }
+
     // Reset deduplication for new request
     state.lastMessageId = null;
-
-    // Store the pending request (don't show in chat yet)
-    state.pendingRequest = content;
 
     // Hide welcome state
     state.elements.welcomeState.classList.add('hidden');
 
-    // Send to parent for processing
+    // Show user message immediately
+    addUserMessage(content);
+
+    // Send to parent for processing (include current state)
     sendToParent({
         type: 'generate',
         content: content,
-        category: detectCategory(content)
+        category: detectCategory(content),
+        state: state.isInPreviewMode ? 'in-preview' : 'idle'
     });
 
     // Clear input
@@ -207,6 +212,7 @@ function handleParentMessage(arg) {
 
         switch (message.type) {
             case 'progress':
+                console.log('Updating progress:', message.stage, message.percent);
                 updateProgressInPreviewArea(message.stage, message.percent);
                 break;
 
@@ -302,12 +308,6 @@ function hideProgress() {
 }
 
 function showProgressInPreviewArea(status, percent) {
-    const { previewArea } = state.elements;
-
-    // Clear and show preview area
-    previewArea.innerHTML = '';
-    previewArea.classList.remove('hidden');
-
     const template = document.getElementById('progressMessageTemplate');
     const clone = template.content.cloneNode(true);
     const progressEl = clone.querySelector('.message-progress');
@@ -318,11 +318,15 @@ function showProgressInPreviewArea(status, percent) {
 
     // Store reference for updates
     state.progressElement = progressEl;
-    previewArea.appendChild(progressEl);
+
+    // Append to chat body (after user message)
+    appendToChatBody(progressEl);
 }
 
 function updateProgressInPreviewArea(status, percent) {
+    console.log('updateProgressInPreviewArea called:', status, percent, 'progressElement exists:', !!state.progressElement);
     if (!state.progressElement) {
+        console.log('No progress element, creating new one');
         showProgressInPreviewArea(status, percent);
         return;
     }
@@ -333,13 +337,36 @@ function updateProgressInPreviewArea(status, percent) {
 }
 
 function hidePreviewArea() {
-    const { previewArea } = state.elements;
-    previewArea.innerHTML = '';
-    previewArea.classList.add('hidden');
+    // Remove preview element from chat body if exists
+    if (state.previewElement && state.previewElement.parentNode) {
+        state.previewElement.remove();
+    }
 
     // Clear preview state
     state.slides = [];
     state.previewElement = null;
+    state.isInPreviewMode = false;
+}
+
+function dismissPreview(message) {
+    // Remove preview element
+    if (state.previewElement && state.previewElement.parentNode) {
+        state.previewElement.remove();
+    }
+
+    // Show dismiss message
+    const dismissEl = document.createElement('div');
+    dismissEl.className = 'message-dismissed fade-in';
+    dismissEl.innerHTML = `
+        <span class="material-icons">info</span>
+        <span>${message}</span>
+    `;
+    appendToChatBody(dismissEl);
+
+    // Clear preview state
+    state.slides = [];
+    state.previewElement = null;
+    state.skippedSlides.clear();
     state.isInPreviewMode = false;
 }
 
@@ -348,15 +375,20 @@ function hidePreviewArea() {
 // ============================================
 
 function showSlidePreview(slides, summary) {
-    const { previewArea } = state.elements;
+    console.log('showSlidePreview called with', slides.length, 'slides');
 
-    // Clear the preview area
-    previewArea.innerHTML = '';
+    // Remove progress element if exists
+    if (state.progressElement && state.progressElement.parentNode) {
+        state.progressElement.remove();
+        state.progressElement = null;
+    }
 
     state.slides = slides;
     state.currentSlideIndex = 0;
     state.skippedSlides.clear();
     state.isInPreviewMode = true;
+    state.isProcessing = false;  // Ready for navigation
+    console.log('isInPreviewMode set to TRUE, isProcessing set to FALSE');
 
     const template = document.getElementById('previewContainerTemplate');
     const clone = template.content.cloneNode(true);
@@ -366,18 +398,22 @@ function showSlidePreview(slides, summary) {
     previewEl.querySelector('.preview-title-text').textContent = summary || 'Preview';
     previewEl.querySelector('.preview-count').textContent = `${slides.length} slides`;
 
-    // Add to the dedicated preview area at the top
-    previewArea.appendChild(previewEl);
-    previewArea.classList.remove('hidden');
-
     // Store reference for navigation
     state.previewElement = previewEl;
+
+    // Append to chat body (after user message)
+    appendToChatBody(previewEl);
 
     // Update display for first slide
     updateSlideDisplay();
 
     // Set up navigation button handlers
     setupPreviewNavigation(previewEl);
+
+    // Scroll to show preview
+    setTimeout(() => {
+        previewEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
 }
 
 function updateSlideDisplay() {
@@ -414,11 +450,12 @@ function updateSlideDisplay() {
 
     backBtn.disabled = state.currentSlideIndex === 0;
 
-    // Change "Next" to "Done" on last slide
+    // Change "Next" to "Insert X Slides" on last slide
+    const nonSkipped = state.slides.length - state.skippedSlides.size;
     if (state.currentSlideIndex === state.slides.length - 1) {
         nextBtn.innerHTML = `
-            Done
-            <span class="material-icons" style="font-size: 18px;">check</span>
+            Insert ${nonSkipped} Slide${nonSkipped !== 1 ? 's' : ''}
+            <span class="material-icons" style="font-size: 18px;">playlist_add</span>
             <span class="nav-shortcut">Enter</span>
         `;
     } else {
@@ -428,11 +465,6 @@ function updateSlideDisplay() {
             <span class="nav-shortcut">Enter</span>
         `;
     }
-
-    // Update Insert All button text
-    const nonSkipped = state.slides.length - state.skippedSlides.size;
-    previewEl.querySelector('.insert-btn-text').textContent =
-        `Insert ${nonSkipped} Slide${nonSkipped !== 1 ? 's' : ''}`;
 }
 
 function setupPreviewNavigation(previewEl) {
@@ -440,7 +472,6 @@ function setupPreviewNavigation(previewEl) {
     previewEl.querySelector('#navSkipBtn').addEventListener('click', skipSlide);
     previewEl.querySelector('#navEditBtn').addEventListener('click', editSlide);
     previewEl.querySelector('#navNextBtn').addEventListener('click', navigateNext);
-    previewEl.querySelector('#insertAllBtn').addEventListener('click', insertAllSlides);
 }
 
 function navigateBack() {
@@ -455,8 +486,8 @@ function navigateNext() {
         state.currentSlideIndex++;
         updateSlideDisplay();
     } else {
-        // On last slide, "Done" goes to insert confirmation
-        showInsertConfirmation();
+        // On last slide, "Done" inserts all slides
+        insertAllSlides();
     }
 }
 
@@ -525,12 +556,6 @@ function showSuccess(message) {
     // Hide and clear preview area first
     hidePreviewArea();
 
-    // Add the original request to chat history
-    if (state.pendingRequest) {
-        addUserMessage(state.pendingRequest);
-        state.pendingRequest = null;
-    }
-
     // Add success message
     const template = document.getElementById('successMessageTemplate');
     const clone = template.content.cloneNode(true);
@@ -543,12 +568,6 @@ function showSuccess(message) {
 function showError(message) {
     // Hide and clear preview area first
     hidePreviewArea();
-
-    // Add the original request to chat history
-    if (state.pendingRequest) {
-        addUserMessage(state.pendingRequest);
-        state.pendingRequest = null;
-    }
 
     // Add error message
     const template = document.getElementById('errorMessageTemplate');
@@ -564,18 +583,27 @@ function showError(message) {
 // ============================================
 
 function handleGlobalKeydown(e) {
-    // Only handle shortcuts in preview mode
-    if (!state.isInPreviewMode || state.isProcessing) return;
+    // Handle Enter key globally
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
 
-    // Don't capture when typing in input
+        const hasText = state.elements.messageInput.value.trim().length > 0;
+
+        if (hasText && !state.isProcessing) {
+            // Has text in input → send message
+            handleSend();
+        } else if (state.isInPreviewMode && !state.isProcessing) {
+            // Empty input + in preview mode → Next
+            navigateNext();
+        }
+        return;
+    }
+
+    // Other shortcuts only work in preview mode and when NOT typing in input
+    if (!state.isInPreviewMode || state.isProcessing) return;
     if (document.activeElement === state.elements.messageInput) return;
 
     switch (e.key.toLowerCase()) {
-        case 'enter':
-            e.preventDefault();
-            navigateNext();
-            break;
-
         case 's':
             e.preventDefault();
             skipSlide();
@@ -593,7 +621,6 @@ function handleGlobalKeydown(e) {
 
         case 'escape':
             e.preventDefault();
-            // Focus input to allow typing refinements
             state.elements.messageInput.focus();
             break;
 

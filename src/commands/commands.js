@@ -71,7 +71,7 @@ function openTeachersCenterDialog(event) {
  * Handle messages received from the dialog
  */
 function handleDialogMessage(arg, event) {
-    console.log('Message from dialog:', arg.message);
+    console.log('Commands.js: Message received from dialog:', arg.message);
 
     try {
         const message = JSON.parse(arg.message);
@@ -139,12 +139,16 @@ function closeDialog() {
  * Send a message to the dialog
  */
 function sendToDialog(message) {
+    console.log('Commands.js: Sending to dialog:', message);
     if (dialog) {
         try {
             dialog.messageChild(JSON.stringify(message));
+            console.log('Commands.js: Message sent successfully');
         } catch (error) {
-            console.error('Failed to send message to dialog:', error);
+            console.error('Commands.js: Failed to send message to dialog:', error);
         }
+    } else {
+        console.error('Commands.js: No dialog reference, cannot send message');
     }
 }
 
@@ -159,8 +163,13 @@ function sendToDialog(message) {
 async function handleGenerateRequest(message) {
     console.log('Generate request:', message);
 
-    // Send progress updates to dialog
-    sendToDialog({ type: 'progress', stage: 'Analyzing request...', percent: 10 });
+    // Send progress updates to dialog (include state if was in preview)
+    sendToDialog({
+        type: 'progress',
+        stage: 'Analyzing request...',
+        percent: 10,
+        state: message.state
+    });
 
     // Simulate AI processing with progress updates
     await simulateProgress([

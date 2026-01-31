@@ -281,11 +281,9 @@ body {
     background: var(--bg-secondary);
     border: 1px solid var(--border-light);
     border-radius: var(--radius-lg);
-    overflow: hidden;
     box-shadow: var(--shadow-sm);
     display: flex;
     flex-direction: column;
-    max-height: calc(100vh - 280px);
 }
 
 .preview-header {
@@ -322,9 +320,6 @@ body {
 /* Single Slide Preview (Claude Code style navigation) */
 .slide-preview-single {
     padding: var(--spacing-md);
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0;
 }
 
 .slide-counter {
@@ -529,6 +524,26 @@ body {
 }
 
 /* ============================================
+   DISMISSED MESSAGE
+   ============================================ */
+.message-dismissed {
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: var(--warning-bg);
+    border-radius: var(--radius-lg);
+    font-size: 14px;
+    color: var(--warning-text);
+}
+
+.message-dismissed .material-icons {
+    font-size: 20px;
+    color: #c59a00;
+}
+
+/* ============================================
    INPUT FOOTER - Copilot-style
    ============================================ */
 .input-footer {
@@ -561,10 +576,14 @@ body {
     font-family: inherit;
     font-size: 14px;
     resize: none;
-    min-height: 24px;
+    min-height: 42px;
     max-height: 120px;
     line-height: 1.5;
     background: transparent;
+}
+
+.input-container textarea:focus-visible {
+    outline: none;
 }
 
 .input-container textarea::placeholder {
