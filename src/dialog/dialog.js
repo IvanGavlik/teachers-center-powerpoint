@@ -381,12 +381,24 @@ function handleWebSocketMessage(data) {
         }
 
         if (message.slides || message.data) {
-            // Backend sent slides
+            // Backend sent slides in slides/data format
             const slides = transformBackendSlides(message.slides || message.data);
             if (slides && slides.length > 0) {
                 showSlidePreview(slides, message.summary || 'Generated Slides');
             } else {
                 showError('No slides generated. Please try a different request.');
+                state.isProcessing = false;
+            }
+            return;
+        }
+
+        if (message.words && Array.isArray(message.words)) {
+            // Backend sent vocabulary format: { title, subtitle, words: [...] }
+            const slides = transformVocabularyToSlides(message);
+            if (slides && slides.length > 0) {
+                showSlidePreview(slides, message.title || 'Vocabulary');
+            } else {
+                showError('No vocabulary generated. Please try a different request.');
                 state.isProcessing = false;
             }
             return;
@@ -458,6 +470,37 @@ function transformBackendSlides(backendSlides) {
         content: slide.content || slide.body || '',
         example: slide.example || slide['example-sentence'] || ''
     }));
+}
+
+function transformVocabularyToSlides(vocabData) {
+    // Transform vocabulary response format to slides
+    // Input: { title, subtitle, words: [{ word, definition, translation, example? }] }
+    // Output: array of slide objects for preview
+
+    const slides = [];
+
+    // Add title slide
+    slides.push({
+        type: 'Title',
+        title: vocabData.title || 'Vocabulary',
+        subtitle: vocabData.subtitle || '',
+        content: ''
+    });
+
+    // Add a slide for each word
+    if (vocabData.words && Array.isArray(vocabData.words)) {
+        vocabData.words.forEach(word => {
+            slides.push({
+                type: 'Vocabulary',
+                title: word.word || '',
+                subtitle: word.translation || '',
+                content: word.definition || '',
+                example: word.example || ''
+            });
+        });
+    }
+
+    return slides;
 }
 
 // ============================================
