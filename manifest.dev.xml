@@ -69,7 +69,7 @@
                   <bt:Image size="80" resid="Icon.80x80"/>
                 </Icon>
 
-                <Control xsi:type="Button" id="TaskpaneButton">
+                <Control xsi:type="Button" id="OpenDialogButton">
                   <Label resid="TaskpaneButton.Label"/>
                   <Supertip>
                     <Title resid="TaskpaneButton.Label"/>
@@ -82,9 +82,8 @@
                     <bt:Image size="80" resid="Icon.80x80"/>
                   </Icon>
 
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
-                    <SourceLocation resid="Taskpane.Url"/>
+                  <Action xsi:type="ExecuteFunction">
+                    <FunctionName>openTeachersCenterDialog</FunctionName>
                   </Action>
                 </Control>
 
