@@ -30,6 +30,15 @@ const state = {
     // Deduplication - track last processed message
     lastMessageId: null,
 
+    // Settings
+    settings: {
+        language: 'English',
+        level: 'B1',
+        className: '',
+        nativeLanguage: '',
+        ageGroup: ''
+    },
+
     // UI elements (cached after init)
     elements: {}
 };
@@ -52,10 +61,25 @@ function initializeDialog() {
         messageInput: document.getElementById('messageInput'),
         quickActions: document.getElementById('quickActions'),
         closeBtn: document.getElementById('closeBtn'),
-        settingsBtn: document.getElementById('settingsBtn'),
+        // TODO: implement in version 2
+        // settingsBtn: document.getElementById('settingsBtn'),
         newChatBtn: document.getElementById('newChatBtn'),
-        menuBtn: document.getElementById('menuBtn')
+        // TODO: implement in version 2
+        // contextBadge: document.getElementById('contextBadge'),
+        // Settings modal elements
+        settingsModal: document.getElementById('settingsModal'),
+        closeModalBtn: document.getElementById('closeModalBtn'),
+        cancelSettingsBtn: document.getElementById('cancelSettingsBtn'),
+        saveSettingsBtn: document.getElementById('saveSettingsBtn'),
+        settingsLanguage: document.getElementById('settingsLanguage'),
+        settingsLevel: document.getElementById('settingsLevel'),
+        settingsClassName: document.getElementById('settingsClassName'),
+        settingsNativeLanguage: document.getElementById('settingsNativeLanguage'),
+        settingsAgeGroup: document.getElementById('settingsAgeGroup')
     };
+
+    // Load saved settings
+    loadSettings();
 
     // Set up event listeners
     setupEventListeners();
@@ -70,7 +94,7 @@ function initializeDialog() {
 }
 
 function setupEventListeners() {
-    const { messageInput, quickActions, closeBtn, settingsBtn, newChatBtn, menuBtn } = state.elements;
+    const { messageInput, quickActions, closeBtn, newChatBtn } = state.elements;
 
     // Handle window resize - keep preview visible
     window.addEventListener('resize', () => {
@@ -102,8 +126,28 @@ function setupEventListeners() {
     // Header buttons
     closeBtn.addEventListener('click', handleClose);
     newChatBtn.addEventListener('click', handleNewChat);
-    settingsBtn.addEventListener('click', () => console.log('Settings clicked'));
-    menuBtn.addEventListener('click', () => console.log('Menu clicked'));
+    // TODO: implement in version 2
+    // settingsBtn.addEventListener('click', openSettingsModal);
+
+    // TODO: implement in version 2
+    // Context badge also opens settings
+    // const { contextBadge } = state.elements;
+    // if (contextBadge) {
+    //     contextBadge.addEventListener('click', openSettingsModal);
+    // }
+
+    // Settings modal buttons
+    const { closeModalBtn, cancelSettingsBtn, saveSettingsBtn, settingsModal } = state.elements;
+    closeModalBtn.addEventListener('click', closeSettingsModal);
+    cancelSettingsBtn.addEventListener('click', closeSettingsModal);
+    saveSettingsBtn.addEventListener('click', saveSettings);
+
+    // Close modal when clicking overlay
+    settingsModal.addEventListener('click', (e) => {
+        if (e.target === settingsModal) {
+            closeSettingsModal();
+        }
+    });
 
     // Global keyboard shortcuts
     document.addEventListener('keydown', handleGlobalKeydown);
@@ -534,18 +578,18 @@ function insertAllSlides() {
         return;
     }
 
-    // Show progress in preview area (replaces slide preview)
+    // Hide preview immediately
+    hidePreviewArea();
+
+    // Show progress
     state.isProcessing = true;
-    showProgressInPreviewArea('Starting slide insertion...', 0);
+    showProgressInPreviewArea('Inserting slides...', 0);
 
     // Send to parent for insertion
     sendToParent({
         type: 'insert',
         slides: slidesToInsert
     });
-
-    // Exit preview mode
-    state.isInPreviewMode = false;
 }
 
 // ============================================
@@ -638,6 +682,82 @@ function handleGlobalKeydown(e) {
                 navigateNext();
             }
             break;
+    }
+}
+
+// ============================================
+// SETTINGS FUNCTIONS
+// ============================================
+
+function openSettingsModal() {
+    const { settingsModal } = state.elements;
+    settingsModal.classList.remove('hidden');
+}
+
+function closeSettingsModal() {
+    const { settingsModal } = state.elements;
+    settingsModal.classList.add('hidden');
+    // Reset form to saved values
+    loadSettingsToForm();
+}
+
+function loadSettings() {
+    // Load settings from localStorage
+    const savedSettings = localStorage.getItem('teachersCenterSettings');
+    if (savedSettings) {
+        state.settings = JSON.parse(savedSettings);
+    } else {
+        // Default settings
+        state.settings = {
+            language: 'English',
+            level: 'B1',
+            className: '',
+            nativeLanguage: '',
+            ageGroup: ''
+        };
+    }
+
+    // Apply settings to form and context badge
+    loadSettingsToForm();
+    updateContextBadge();
+}
+
+function loadSettingsToForm() {
+    const { settingsLanguage, settingsLevel, settingsClassName, settingsNativeLanguage, settingsAgeGroup } = state.elements;
+
+    settingsLanguage.value = state.settings.language;
+    settingsLevel.value = state.settings.level;
+    settingsClassName.value = state.settings.className;
+    settingsNativeLanguage.value = state.settings.nativeLanguage;
+    settingsAgeGroup.value = state.settings.ageGroup;
+}
+
+function saveSettings() {
+    const { settingsLanguage, settingsLevel, settingsClassName, settingsNativeLanguage, settingsAgeGroup } = state.elements;
+
+    // Update state
+    state.settings = {
+        language: settingsLanguage.value,
+        level: settingsLevel.value,
+        className: settingsClassName.value,
+        nativeLanguage: settingsNativeLanguage.value,
+        ageGroup: settingsAgeGroup.value
+    };
+
+    // Save to localStorage
+    localStorage.setItem('teachersCenterSettings', JSON.stringify(state.settings));
+
+    // Update context badge
+    updateContextBadge();
+
+    // Close modal
+    closeSettingsModal();
+}
+
+function updateContextBadge() {
+    const { contextBadge } = state.elements;
+    if (contextBadge) {
+        contextBadge.textContent = `${state.settings.level} ${state.settings.language}`;
     }
 }
 

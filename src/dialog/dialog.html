@@ -23,18 +23,20 @@
          ============================================ -->
     <header class="header">
         <div class="header-left">
-            <button class="icon-btn" id="menuBtn" title="Menu">
-                <span class="material-icons">menu</span>
-            </button>
             <h1 class="header-title">
                 <span class="material-icons">school</span>
                 Teachers Center
             </h1>
+            <!-- TODO: implement in version 2
+            <span class="context-badge" id="contextBadge">B1 English</span>
+            -->
         </div>
         <div class="header-actions">
+            <!-- TODO: implement in version 2
             <button class="icon-btn" id="settingsBtn" title="Settings">
                 <span class="material-icons">settings</span>
             </button>
+            -->
             <button class="icon-btn" id="newChatBtn" title="New Chat">
                 <span class="material-icons">add_comment</span>
             </button>
@@ -88,10 +90,6 @@
 
         <div class="input-context">
             <span>AI-generated content may need review</span>
-            <span class="context-badge" id="contextBadge">
-                <span class="material-icons" style="font-size: 14px;">translate</span>
-                B1 English
-            </span>
         </div>
     </footer>
 
@@ -176,6 +174,73 @@
             <span class="error-text"></span>
         </div>
     </template>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay hidden" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Class Settings</h3>
+                <button class="modal-close" id="closeModalBtn">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-group">
+                    <label for="settingsLanguage">Target Language</label>
+                    <select id="settingsLanguage">
+                        <option value="English">English</option>
+                        <option value="German">German</option>
+                        <option value="French">French</option>
+                        <option value="Spanish">Spanish</option>
+                        <option value="Italian">Italian</option>
+                        <option value="Portuguese">Portuguese</option>
+                    </select>
+                </div>
+
+                <div class="settings-group">
+                    <label for="settingsLevel">Language Level</label>
+                    <select id="settingsLevel">
+                        <option value="A1">A1 - Beginner</option>
+                        <option value="A2">A2 - Elementary</option>
+                        <option value="B1" selected>B1 - Intermediate</option>
+                        <option value="B2">B2 - Upper Intermediate</option>
+                        <option value="C1">C1 - Advanced</option>
+                        <option value="C2">C2 - Proficient</option>
+                    </select>
+                </div>
+
+                <div class="settings-group">
+                    <label for="settingsClassName">Class Name</label>
+                    <input type="text" id="settingsClassName" placeholder="e.g., Class 7A" value="">
+                </div>
+
+                <div class="settings-group">
+                    <label for="settingsNativeLanguage">Native Language (Optional)</label>
+                    <select id="settingsNativeLanguage">
+                        <option value="">-- Not specified --</option>
+                        <option value="English">English</option>
+                        <option value="German">German</option>
+                        <option value="French">French</option>
+                        <option value="Spanish">Spanish</option>
+                        <option value="Italian">Italian</option>
+                        <option value="Portuguese">Portuguese</option>
+                        <option value="Chinese">Chinese</option>
+                        <option value="Arabic">Arabic</option>
+                        <option value="Russian">Russian</option>
+                    </select>
+                </div>
+
+                <div class="settings-group">
+                    <label for="settingsAgeGroup">Student Age Range (Optional)</label>
+                    <input type="text" id="settingsAgeGroup" placeholder="e.g., 12-14">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelSettingsBtn">Cancel</button>
+                <button class="btn btn-primary" id="saveSettingsBtn">Save</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Dialog JavaScript is injected by webpack -->
 </body>
