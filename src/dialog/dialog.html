@@ -73,19 +73,38 @@
          INPUT FOOTER - Copilot-style
          ============================================ -->
     <footer class="input-footer">
-        <div class="input-container">
-            <textarea
-                id="messageInput"
-                placeholder="Type your request... e.g., 'Create 5 German food vocabulary words for A1 level'"
-                rows="2"
-            ></textarea>
+        <!-- Type Selection -->
+        <div class="type-selector" id="typeSelector">
+            <div class="type-options" id="typeOptions">
+                <button class="type-option selected" data-type="vocabulary" data-placeholder="e.g., '10 German food words for A1 level with examples'">
+                    <span class="material-icons">translate</span>
+                    <span>Vocabulary</span>
+                </button>
+                <button class="type-option" data-type="grammar" data-placeholder="e.g., 'Explain past tense conjugation in Spanish for B1'">
+                    <span class="material-icons">spellcheck</span>
+                    <span>Grammar</span>
+                </button>
+                <button class="type-option" data-type="quiz" data-placeholder="e.g., 'Create a 10-question quiz about French articles'">
+                    <span class="material-icons">quiz</span>
+                    <span>Quiz</span>
+                </button>
+                <button class="type-option" data-type="homework" data-placeholder="e.g., 'Homework exercises for German dative case, 5 questions'">
+                    <span class="material-icons">assignment</span>
+                    <span>Homework</span>
+                </button>
+            </div>
+            <div class="type-error hidden" id="typeError">
+                <span class="material-icons">error_outline</span>
+                <span>Please select a content type before sending</span>
+            </div>
         </div>
 
-        <div class="quick-actions" id="quickActions">
-            <button class="quick-action" data-prompt="Create vocabulary flashcards for ">Vocabulary</button>
-            <button class="quick-action" data-prompt="Create a quiz about ">Quiz</button>
-            <button class="quick-action" data-prompt="Explain the grammar rule for ">Grammar</button>
-            <button class="quick-action" data-prompt="Create homework exercises for ">Homework</button>
+        <div class="input-container" id="inputContainer">
+            <textarea
+                id="messageInput"
+                placeholder="Type your request..."
+                rows="2"
+            ></textarea>
         </div>
 
         <div class="input-context">

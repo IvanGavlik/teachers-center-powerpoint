@@ -40,6 +40,9 @@ const state = {
     // Deduplication - track last processed message
     lastMessageId: null,
 
+    // Type selection (required before sending) - vocabulary is default
+    selectedType: 'vocabulary', // 'vocabulary' | 'grammar' | 'quiz' | 'homework'
+
     // Settings
     settings: {
         language: 'English',
@@ -75,13 +78,17 @@ function initializeDialog() {
         welcomeState: document.getElementById('welcomeState'),
         previewArea: document.getElementById('previewArea'),
         messageInput: document.getElementById('messageInput'),
-        quickActions: document.getElementById('quickActions'),
+        inputContainer: document.getElementById('inputContainer'),
         closeBtn: document.getElementById('closeBtn'),
         // TODO: implement in version 2
         // settingsBtn: document.getElementById('settingsBtn'),
         newChatBtn: document.getElementById('newChatBtn'),
         // TODO: implement in version 2
         // contextBadge: document.getElementById('contextBadge'),
+        // Type selector elements
+        typeSelector: document.getElementById('typeSelector'),
+        typeOptions: document.getElementById('typeOptions'),
+        typeError: document.getElementById('typeError'),
         // Settings modal elements
         settingsModal: document.getElementById('settingsModal'),
         closeModalBtn: document.getElementById('closeModalBtn'),
@@ -100,6 +107,12 @@ function initializeDialog() {
     // Set up event listeners
     setupEventListeners();
 
+    // Set initial placeholder for default type (vocabulary)
+    const defaultTypeBtn = state.elements.typeOptions.querySelector('.type-option.selected');
+    if (defaultTypeBtn && defaultTypeBtn.dataset.placeholder) {
+        state.elements.messageInput.placeholder = defaultTypeBtn.dataset.placeholder;
+    }
+
     // Listen for messages from parent (commands.js)
     Office.context.ui.addHandlerAsync(
         Office.EventType.DialogParentMessageReceived,
@@ -115,7 +128,7 @@ function initializeDialog() {
 }
 
 function setupEventListeners() {
-    const { messageInput, quickActions, closeBtn, newChatBtn } = state.elements;
+    const { messageInput, closeBtn, newChatBtn, typeOptions } = state.elements;
 
     // Handle window resize - keep preview visible
     window.addEventListener('resize', () => {
@@ -128,19 +141,15 @@ function setupEventListeners() {
     messageInput.addEventListener('input', () => {
         messageInput.style.height = 'auto';
         messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+        // Clear validation error when user starts typing
+        clearTypeValidationError();
     });
 
-    // Quick actions - fill input only
-    quickActions.addEventListener('click', (e) => {
-        const btn = e.target.closest('.quick-action');
+    // Type selection - select type and optionally fill prompt
+    typeOptions.addEventListener('click', (e) => {
+        const btn = e.target.closest('.type-option');
         if (btn) {
-            const prompt = btn.dataset.prompt || '';
-            messageInput.value = prompt;
-            messageInput.focus();
-            // Place cursor at end
-            messageInput.setSelectionRange(prompt.length, prompt.length);
-            // Trigger resize
-            messageInput.dispatchEvent(new Event('input'));
+            selectType(btn);
         }
     });
 
@@ -175,6 +184,78 @@ function setupEventListeners() {
 }
 
 // ============================================
+// TYPE SELECTION
+// ============================================
+
+function selectType(btn) {
+    const { typeOptions, messageInput } = state.elements;
+    const type = btn.dataset.type;
+    const placeholder = btn.dataset.placeholder || 'Type your request...';
+
+    // Remove selected class from all options
+    typeOptions.querySelectorAll('.type-option').forEach(opt => {
+        opt.classList.remove('selected');
+    });
+
+    // Add selected class to clicked option
+    btn.classList.add('selected');
+
+    // Update state
+    state.selectedType = type;
+
+    // Update placeholder text
+    messageInput.placeholder = placeholder;
+
+    // Clear any validation error
+    clearTypeValidationError();
+
+    // Focus the input
+    messageInput.focus();
+
+    console.log('Type selected:', type);
+}
+
+function resetTypeSelection() {
+    const { typeOptions, messageInput } = state.elements;
+
+    // Remove selected class from all options
+    typeOptions.querySelectorAll('.type-option').forEach(opt => {
+        opt.classList.remove('selected');
+    });
+
+    // Reset to default (vocabulary)
+    const defaultBtn = typeOptions.querySelector('[data-type="vocabulary"]');
+    if (defaultBtn) {
+        defaultBtn.classList.add('selected');
+        state.selectedType = 'vocabulary';
+        messageInput.placeholder = defaultBtn.dataset.placeholder || 'Type your request...';
+    }
+
+    // Clear any validation error
+    clearTypeValidationError();
+}
+
+function showTypeValidationError() {
+    const { typeError, inputContainer } = state.elements;
+    typeError.classList.remove('hidden');
+    inputContainer.classList.add('validation-error');
+}
+
+function clearTypeValidationError() {
+    const { typeError, inputContainer } = state.elements;
+    typeError.classList.add('hidden');
+    inputContainer.classList.remove('validation-error');
+}
+
+function validateTypeSelection() {
+    if (!state.selectedType) {
+        showTypeValidationError();
+        return false;
+    }
+    return true;
+}
+
+// ============================================
 // MESSAGE HANDLING
 // ============================================
 
@@ -183,6 +264,11 @@ function handleSend() {
     const content = messageInput.value.trim();
 
     if (!content || state.isProcessing) return;
+
+    // Validate type selection (required)
+    if (!validateTypeSelection()) {
+        return;
+    }
 
     // If there's an existing preview, dismiss it first
     if (state.isInPreviewMode && state.slides.length > 0) {
@@ -207,11 +293,10 @@ function handleSend() {
     state.isProcessing = true;
     showProgressInPreviewArea('Generating content...', 0);
 
-    // Send to WebSocket backend
+    // Send to WebSocket backend with selected type
     const sent = sendWebSocketMessage({
-        type: 'generate',
-        content: content,
-        category: detectCategory(content)
+        type: state.selectedType,
+        content: content
     });
 
     // If WebSocket send failed, try to reconnect and show error
@@ -234,6 +319,9 @@ function handleNewChat() {
     state.isProcessing = false;
     state.conversationId = null; // New conversation ID will be generated on next message
 
+    // Reset type selection to default (vocabulary)
+    resetTypeSelection();
+
     // Hide preview area
     hidePreviewArea();
 
@@ -242,15 +330,6 @@ function handleNewChat() {
     chatBody.innerHTML = '';
     chatBody.appendChild(welcomeState);
     welcomeState.classList.remove('hidden');
-}
-
-function detectCategory(content) {
-    const lower = content.toLowerCase();
-    if (lower.includes('vocab') || lower.includes('word')) return 'vocabulary';
-    if (lower.includes('quiz') || lower.includes('test')) return 'quiz';
-    if (lower.includes('grammar')) return 'grammar';
-    if (lower.includes('homework') || lower.includes('exercise')) return 'homework';
-    return 'general';
 }
 
 // ============================================
@@ -342,10 +421,9 @@ function sendWebSocketMessage(message) {
             'user-id': USER_ID,
             'channel-name': CHANNEL_NAME,
             'conversation-id': state.conversationId,
-            type: message.type || 'generate',
+            type: message.type, // Required: 'vocabulary' | 'grammar' | 'quiz' | 'homework'
             content: message.content,
             requirements: {
-                category: message.category || 'general',
                 language: state.settings.language,
                 level: state.settings.level,
                 nativeLanguage: state.settings.nativeLanguage || null,
@@ -354,7 +432,7 @@ function sendWebSocketMessage(message) {
             }
         };
 
-        console.log('Sending WebSocket message:', wsMessage);
+        console.log('Sending WebSocket message:', JSON.stringify(wsMessage, null, 2));
         state.ws.send(JSON.stringify(wsMessage));
         return true;
     } catch (error) {
@@ -380,25 +458,31 @@ function handleWebSocketMessage(data) {
             return;
         }
 
-        if (message.slides || message.data) {
-            // Backend sent slides in slides/data format
-            const slides = transformBackendSlides(message.slides || message.data);
+        // Route by type field from backend
+        if (message.type) {
+            const slides = transformResponseByType(message);
             if (slides && slides.length > 0) {
-                showSlidePreview(slides, message.summary || 'Generated Slides');
+                const titles = {
+                    vocabulary: 'Vocabulary',
+                    grammar: 'Grammar',
+                    quiz: 'Quiz',
+                    homework: 'Homework'
+                };
+                showSlidePreview(slides, message.title || titles[message.type] || 'Generated Content');
             } else {
-                showError('No slides generated. Please try a different request.');
+                showError(`No ${message.type} content generated. Please try a different request.`);
                 state.isProcessing = false;
             }
             return;
         }
 
-        if (message.words && Array.isArray(message.words)) {
-            // Backend sent vocabulary format: { title, subtitle, words: [...] }
-            const slides = transformVocabularyToSlides(message);
+        // Fallback for generic slides format (legacy)
+        if (message.slides || message.data) {
+            const slides = transformBackendSlides(message.slides || message.data);
             if (slides && slides.length > 0) {
-                showSlidePreview(slides, message.title || 'Vocabulary');
+                showSlidePreview(slides, message.summary || 'Generated Slides');
             } else {
-                showError('No vocabulary generated. Please try a different request.');
+                showError('No slides generated. Please try a different request.');
                 state.isProcessing = false;
             }
             return;
@@ -456,9 +540,25 @@ function handleWebSocketMessage(data) {
     }
 }
 
+function transformResponseByType(message) {
+    // Route to appropriate transform function based on type
+    switch (message.type) {
+        case 'vocabulary':
+            return transformVocabularyToSlides(message);
+        case 'grammar':
+            return transformGrammarToSlides(message);
+        case 'quiz':
+            return transformQuizToSlides(message);
+        case 'homework':
+            return transformHomeworkToSlides(message);
+        default:
+            console.warn('Unknown message type:', message.type);
+            return transformBackendSlides(message.slides || message.data || []);
+    }
+}
+
 function transformBackendSlides(backendSlides) {
-    // Transform backend slide format to our internal format
-    // Backend format may vary - adjust as needed
+    // Transform backend slide format to our internal format (fallback)
     if (!backendSlides || !Array.isArray(backendSlides)) {
         return [];
     }
@@ -496,6 +596,156 @@ function transformVocabularyToSlides(vocabData) {
                 subtitle: word.translation || '',
                 content: word.definition || '',
                 example: word.example || ''
+            });
+        });
+    }
+
+    return slides;
+}
+
+function transformGrammarToSlides(grammarData) {
+    // Transform grammar response format to slides
+    // Input: { title, subtitle, slides: [{ slide-title, content: { explanation, form, usage, examples } }] }
+    // Output: array of slide objects for preview
+
+    const slides = [];
+
+    // Add title slide
+    slides.push({
+        type: 'Title',
+        title: grammarData.title || 'Grammar',
+        subtitle: grammarData.subtitle || '',
+        content: ''
+    });
+
+    // Add a slide for each grammar section
+    if (grammarData.slides && Array.isArray(grammarData.slides)) {
+        grammarData.slides.forEach(slide => {
+            const content = slide.content || {};
+
+            // Build content string from grammar structure
+            let contentText = '';
+
+            if (content.explanation) {
+                contentText += content.explanation + '\n\n';
+            }
+
+            if (content.form) {
+                contentText += '📝 Form:\n';
+                if (content.form.positive) contentText += `  ✓ ${content.form.positive}\n`;
+                if (content.form.negative) contentText += `  ✗ ${content.form.negative}\n`;
+                if (content.form.question) contentText += `  ? ${content.form.question}\n`;
+                contentText += '\n';
+            }
+
+            if (content.usage && Array.isArray(content.usage)) {
+                contentText += '💡 Usage:\n';
+                content.usage.forEach(u => {
+                    contentText += `  • ${u}\n`;
+                });
+            }
+
+            // Build examples string
+            let exampleText = '';
+            if (content.examples && Array.isArray(content.examples)) {
+                content.examples.forEach(ex => {
+                    if (ex.sentence) {
+                        exampleText += ex.sentence;
+                        if (ex.translation) exampleText += ` → ${ex.translation}`;
+                        exampleText += '\n';
+                    }
+                });
+            }
+
+            slides.push({
+                type: 'Grammar',
+                title: slide['slide-title'] || slide.slideTitle || 'Grammar Rule',
+                subtitle: '',
+                content: contentText.trim(),
+                example: exampleText.trim()
+            });
+        });
+    }
+
+    return slides;
+}
+
+function transformQuizToSlides(quizData) {
+    // Transform quiz response format to slides
+    // Input: { title, subtitle, quiz-type, focus, questions: [{ question, options, correct-answer }] }
+    // Output: array of slide objects for preview
+
+    const slides = [];
+
+    // Add title slide
+    slides.push({
+        type: 'Title',
+        title: quizData.title || 'Quiz',
+        subtitle: quizData.subtitle || '',
+        content: `Type: ${quizData['quiz-type'] || 'Multiple Choice'} | Focus: ${quizData.focus || 'General'}`
+    });
+
+    // Add a slide for each question
+    if (quizData.questions && Array.isArray(quizData.questions)) {
+        quizData.questions.forEach((q, index) => {
+            let contentText = q.question + '\n\n';
+
+            if (q.options && Array.isArray(q.options)) {
+                q.options.forEach((opt, i) => {
+                    const letter = String.fromCharCode(65 + i); // A, B, C, D
+                    contentText += `${letter}. ${opt}\n`;
+                });
+            }
+
+            slides.push({
+                type: 'Quiz',
+                title: `Question ${index + 1}`,
+                subtitle: '',
+                content: contentText.trim(),
+                example: q['correct-answer'] ? `Answer: ${q['correct-answer']}` : ''
+            });
+        });
+    }
+
+    return slides;
+}
+
+function transformHomeworkToSlides(homeworkData) {
+    // Transform homework response format to slides
+    // Input: { title, subtitle, focus, homework-type, tasks: [{ instruction, items }] }
+    // Output: array of slide objects for preview
+
+    const slides = [];
+
+    // Add title slide
+    slides.push({
+        type: 'Title',
+        title: homeworkData.title || 'Homework',
+        subtitle: homeworkData.subtitle || '',
+        content: `Type: ${homeworkData['homework-type'] || 'Exercise'} | Focus: ${homeworkData.focus || 'General'}`
+    });
+
+    // Add a slide for each task
+    if (homeworkData.tasks && Array.isArray(homeworkData.tasks)) {
+        homeworkData.tasks.forEach((task, index) => {
+            let contentText = '';
+
+            if (task.instruction) {
+                contentText += `📋 ${task.instruction}\n\n`;
+            }
+
+            if (task.items && Array.isArray(task.items)) {
+                task.items.forEach((item, i) => {
+                    contentText += `${i + 1}. ${item}\n`;
+                });
+            }
+
+            slides.push({
+                type: 'Homework',
+                title: `Task ${index + 1}`,
+                subtitle: task.instruction || '',
+                content: contentText.trim(),
+                example: ''
             });
         });
     }
