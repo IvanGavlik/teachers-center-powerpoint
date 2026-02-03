@@ -291,7 +291,7 @@ function handleSend() {
 
     // Show progress in preview area
     state.isProcessing = true;
-    showProgressInPreviewArea('Generating content...', 0);
+    showProgressInPreviewArea('Generating content...');
 
     // Send to WebSocket backend with selected type
     const sent = sendWebSocketMessage({
@@ -458,7 +458,13 @@ function handleWebSocketMessage(data) {
             return;
         }
 
-        // Route by type field from backend
+        // Handle progress updates (sent during content generation)
+        if (message.type === 'progress') {
+            updateProgressInPreviewArea(message.stage || message.message);
+            return;
+        }
+
+        // Route by type field from backend (vocabulary, grammar, quiz, homework)
         if (message.type) {
             const slides = transformResponseByType(message);
             if (slides && slides.length > 0) {
@@ -503,7 +509,7 @@ function handleWebSocketMessage(data) {
         // Handle by explicit type field
         switch (message.type) {
             case 'progress':
-                updateProgressInPreviewArea(message.stage || message.message, message.percent || 0);
+                updateProgressInPreviewArea(message.stage || message.message);
                 break;
 
             case 'slides':
@@ -783,8 +789,8 @@ function handleParentMessage(arg) {
 
         switch (message.type) {
             case 'progress':
-                console.log('Updating progress:', message.stage, message.percent);
-                updateProgressInPreviewArea(message.stage, message.percent);
+                console.log('Updating progress:', message.stage);
+                updateProgressInPreviewArea(message.stage);
                 break;
 
             case 'preview':
@@ -793,8 +799,7 @@ function handleParentMessage(arg) {
 
             case 'insertProgress':
                 updateProgressInPreviewArea(
-                    `Inserting slide ${message.current} of ${message.total}...`,
-                    (message.current / message.total) * 100
+                    `Inserting slide ${message.current} of ${message.total}...`
                 );
                 break;
 
@@ -846,29 +851,25 @@ function addAIMessage(content) {
 // UI COMPONENTS - Progress
 // ============================================
 
-function showProgress(status, percent) {
+function showProgress(status) {
     const template = document.getElementById('progressMessageTemplate');
     const clone = template.content.cloneNode(true);
     const progressEl = clone.querySelector('.message-progress');
 
     progressEl.querySelector('.progress-status').textContent = status;
-    progressEl.querySelector('.progress-bar').style.width = `${percent}%`;
-    progressEl.querySelector('.progress-text').textContent = `${Math.round(percent)}%`;
 
     // Store reference for updates
     state.progressElement = progressEl;
     appendToChatBody(progressEl);
 }
 
-function updateProgress(status, percent) {
+function updateProgress(status) {
     if (!state.progressElement) {
-        showProgress(status, percent);
+        showProgress(status);
         return;
     }
 
     state.progressElement.querySelector('.progress-status').textContent = status;
-    state.progressElement.querySelector('.progress-bar').style.width = `${percent}%`;
-    state.progressElement.querySelector('.progress-text').textContent = `${Math.round(percent)}%`;
 }
 
 function hideProgress() {
@@ -878,14 +879,12 @@ function hideProgress() {
     state.progressElement = null;
 }
 
-function showProgressInPreviewArea(status, percent) {
+function showProgressInPreviewArea(status) {
     const template = document.getElementById('progressMessageTemplate');
     const clone = template.content.cloneNode(true);
     const progressEl = clone.querySelector('.message-progress');
 
     progressEl.querySelector('.progress-status').textContent = status;
-    progressEl.querySelector('.progress-bar').style.width = `${percent}%`;
-    progressEl.querySelector('.progress-text').textContent = `${Math.round(percent)}%`;
 
     // Store reference for updates
     state.progressElement = progressEl;
@@ -894,17 +893,15 @@ function showProgressInPreviewArea(status, percent) {
     appendToChatBody(progressEl);
 }
 
-function updateProgressInPreviewArea(status, percent) {
-    console.log('updateProgressInPreviewArea called:', status, percent, 'progressElement exists:', !!state.progressElement);
+function updateProgressInPreviewArea(status) {
+    console.log('updateProgressInPreviewArea called:', status, 'progressElement exists:', !!state.progressElement);
     if (!state.progressElement) {
         console.log('No progress element, creating new one');
-        showProgressInPreviewArea(status, percent);
+        showProgressInPreviewArea(status);
         return;
     }
 
     state.progressElement.querySelector('.progress-status').textContent = status;
-    state.progressElement.querySelector('.progress-bar').style.width = `${percent}%`;
-    state.progressElement.querySelector('.progress-text').textContent = `${Math.round(percent)}%`;
 }
 
 function hidePreviewArea() {
@@ -1110,7 +1107,7 @@ function insertAllSlides() {
 
     // Show progress
     state.isProcessing = true;
-    showProgressInPreviewArea('Inserting slides...', 0);
+    showProgressInPreviewArea('Inserting slides...');
 
     // Send to parent for insertion
     sendToParent({
