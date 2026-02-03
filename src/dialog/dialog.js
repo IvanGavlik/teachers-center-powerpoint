@@ -36,6 +36,7 @@ const state = {
 
     // Progress state
     progressElement: null,
+    cancelled: false,
 
     // Deduplication - track last processed message
     lastMessageId: null,
@@ -276,8 +277,9 @@ function handleSend() {
         dismissPreview(`${skippedCount} slide${skippedCount !== 1 ? 's' : ''} not inserted`);
     }
 
-    // Reset deduplication for new request
+    // Reset state for new request
     state.lastMessageId = null;
+    state.cancelled = false;
 
     // Hide welcome state
     state.elements.welcomeState.classList.add('hidden');
@@ -290,7 +292,7 @@ function handleSend() {
     messageInput.style.height = 'auto';
 
     // Show progress in preview area
-    state.isProcessing = true;
+    setProcessing(true);
     showProgressInPreviewArea('Generating content...');
 
     // Send to WebSocket backend with selected type
@@ -316,7 +318,7 @@ function handleNewChat() {
     state.pendingRequest = null;
     state.currentSlideIndex = 0;
     state.skippedSlides.clear();
-    state.isProcessing = false;
+    setProcessing(false);
     state.conversationId = null; // New conversation ID will be generated on next message
 
     // Reset type selection to default (vocabulary)
@@ -406,7 +408,7 @@ function sendWebSocketMessage(message) {
     if (!state.ws || state.wsState !== 'connected') {
         console.error('WebSocket not connected, cannot send message. State:', state.wsState);
         showError('Not connected to server. Make sure the backend is running and refresh the dialog.');
-        state.isProcessing = false;
+        setProcessing(false);
         return false;
     }
 
@@ -438,7 +440,7 @@ function sendWebSocketMessage(message) {
     } catch (error) {
         console.error('Failed to send WebSocket message:', error);
         showError('Failed to send message. Please try again.');
-        state.isProcessing = false;
+        setProcessing(false);
         return false;
     }
 }
@@ -448,13 +450,19 @@ function handleWebSocketMessage(data) {
         const message = JSON.parse(data);
         console.log('Parsed WebSocket message:', message);
 
+        // Ignore responses if user cancelled (except progress which we just skip)
+        if (state.cancelled) {
+            console.log('Ignoring message - generation was cancelled');
+            return;
+        }
+
         // Handle different message types from backend
         // Check for known fields first (backend may not always send 'type')
         if (message['requirements-not-meet']) {
             // Backend needs more information
             hideProgress();
             addAIMessage(message['requirements-not-meet']);
-            state.isProcessing = false;
+            setProcessing(false);
             return;
         }
 
@@ -477,7 +485,7 @@ function handleWebSocketMessage(data) {
                 showSlidePreview(slides, message.title || titles[message.type] || 'Generated Content');
             } else {
                 showError(`No ${message.type} content generated. Please try a different request.`);
-                state.isProcessing = false;
+                setProcessing(false);
             }
             return;
         }
@@ -489,7 +497,7 @@ function handleWebSocketMessage(data) {
                 showSlidePreview(slides, message.summary || 'Generated Slides');
             } else {
                 showError('No slides generated. Please try a different request.');
-                state.isProcessing = false;
+                setProcessing(false);
             }
             return;
         }
@@ -502,7 +510,7 @@ function handleWebSocketMessage(data) {
             } else {
                 addAIMessage(message.message);
             }
-            state.isProcessing = false;
+            setProcessing(false);
             return;
         }
 
@@ -519,14 +527,14 @@ function handleWebSocketMessage(data) {
                     showSlidePreview(slides, message.summary || 'Generated Slides');
                 } else {
                     showError('No slides generated. Please try a different request.');
-                    state.isProcessing = false;
+                    setProcessing(false);
                 }
                 break;
 
             case 'error':
                 hideProgress();
                 showError(message.message || 'An error occurred');
-                state.isProcessing = false;
+                setProcessing(false);
                 break;
 
             case 'connected':
@@ -537,12 +545,12 @@ function handleWebSocketMessage(data) {
                 console.log('Unknown WebSocket message type:', message.type);
                 // If we got here with no handler, stop processing state
                 hideProgress();
-                state.isProcessing = false;
+                setProcessing(false);
         }
     } catch (error) {
         console.error('Failed to parse WebSocket message:', error);
         hideProgress();
-        state.isProcessing = false;
+        setProcessing(false);
     }
 }
 
@@ -806,13 +814,13 @@ function handleParentMessage(arg) {
             case 'success':
                 hideProgress();
                 showSuccess(message.message);
-                state.isProcessing = false;
+                setProcessing(false);
                 break;
 
             case 'error':
                 hideProgress();
                 showError(message.message);
-                state.isProcessing = false;
+                setProcessing(false);
                 break;
 
             default:
@@ -879,12 +887,26 @@ function hideProgress() {
     state.progressElement = null;
 }
 
+function cancelGeneration() {
+    console.log('Generation cancelled by user');
+    state.cancelled = true;
+    hideProgress();
+    setProcessing(false);
+    addAIMessage('Generation cancelled.');
+}
+
 function showProgressInPreviewArea(status) {
     const template = document.getElementById('progressMessageTemplate');
     const clone = template.content.cloneNode(true);
     const progressEl = clone.querySelector('.message-progress');
 
     progressEl.querySelector('.progress-status').textContent = status;
+
+    // Attach cancel button handler
+    const cancelBtn = progressEl.querySelector('.progress-cancel-btn');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', cancelGeneration);
+    }
 
     // Store reference for updates
     state.progressElement = progressEl;
@@ -955,7 +977,7 @@ function showSlidePreview(slides, summary) {
     state.currentSlideIndex = 0;
     state.skippedSlides.clear();
     state.isInPreviewMode = true;
-    state.isProcessing = false;  // Ready for navigation
+    setProcessing(false);  // Ready for navigation
     console.log('isInPreviewMode set to TRUE, isProcessing set to FALSE');
 
     const template = document.getElementById('previewContainerTemplate');
@@ -1106,7 +1128,7 @@ function insertAllSlides() {
     hidePreviewArea();
 
     // Show progress
-    state.isProcessing = true;
+    setProcessing(true);
     showProgressInPreviewArea('Inserting slides...');
 
     // Send to parent for insertion
@@ -1288,6 +1310,25 @@ function updateContextBadge() {
 // ============================================
 // UTILITY FUNCTIONS
 // ============================================
+
+function setProcessing(isProcessing) {
+    state.isProcessing = isProcessing;
+    const { messageInput, typeOptions } = state.elements;
+
+    // Disable/enable input and type buttons during processing
+    messageInput.disabled = isProcessing;
+    typeOptions.querySelectorAll('.type-option').forEach(btn => {
+        btn.disabled = isProcessing;
+    });
+
+    if (isProcessing) {
+        messageInput.placeholder = 'Generating content...';
+    } else {
+        // Restore placeholder based on selected type
+        const selectedBtn = typeOptions.querySelector('.type-option.selected');
+        messageInput.placeholder = selectedBtn?.dataset.placeholder || 'Type your request...';
+    }
+}
 
 function appendToChatBody(element) {
     const { chatBody, welcomeState } = state.elements;

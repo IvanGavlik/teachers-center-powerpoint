@@ -246,6 +246,24 @@ body {
     to { transform: rotate(360deg); }
 }
 
+.progress-cancel-btn {
+    margin-left: auto;
+    background: #C43E1C;
+    border: none;
+    color: white;
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    font-size: 14px;
+    line-height: 1;
+    border-radius: var(--radius-sm);
+    transition: background-color 0.15s;
+}
+
+.progress-cancel-btn:hover {
+    background: #A33517;
+}
+
 /* ============================================
    SLIDE PREVIEW COMPONENTS
    ============================================ */
@@ -648,6 +666,15 @@ body {
 
 .input-container textarea::placeholder {
     color: var(--text-tertiary);
+}
+
+.input-container textarea:disabled {
+    cursor: default;
+}
+
+.type-option:disabled {
+    cursor: default;
+    pointer-events: none;
 }
 
 .input-actions {
