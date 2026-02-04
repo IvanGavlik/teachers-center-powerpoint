@@ -37,6 +37,7 @@ const state = {
     // Progress state
     progressElement: null,
     cancelled: false,
+    staleResponses: 0,
 
     // Deduplication - track last processed message
     lastMessageId: null,
@@ -450,9 +451,12 @@ function handleWebSocketMessage(data) {
         const message = JSON.parse(data);
         console.log('Parsed WebSocket message:', message);
 
-        // Ignore responses if user cancelled (except progress which we just skip)
-        if (state.cancelled) {
-            console.log('Ignoring message - generation was cancelled');
+        // Ignore stale responses from cancelled requests
+        if (state.staleResponses > 0) {
+            if (message.type !== 'progress') {
+                state.staleResponses--;
+                console.log('Discarded stale response from cancelled request');
+            }
             return;
         }
 
@@ -890,6 +894,8 @@ function hideProgress() {
 function cancelGeneration() {
     console.log('Generation cancelled by user');
     state.cancelled = true;
+    state.conversationId = null;
+    state.staleResponses++;
     hideProgress();
     setProcessing(false);
     addAIMessage('Generation cancelled.');
@@ -944,14 +950,8 @@ function dismissPreview(message) {
         state.previewElement.remove();
     }
 
-    // Show dismiss message
-    const dismissEl = document.createElement('div');
-    dismissEl.className = 'message-dismissed fade-in';
-    dismissEl.innerHTML = `
-        <span class="material-icons">info</span>
-        <span>${message}</span>
-    `;
-    appendToChatBody(dismissEl);
+    // Show dismiss message (same style as AI messages)
+    addAIMessage(message);
 
     // Clear preview state
     state.slides = [];
@@ -1062,6 +1062,12 @@ function setupPreviewNavigation(previewEl) {
     previewEl.querySelector('#navSkipBtn').addEventListener('click', skipSlide);
     previewEl.querySelector('#navEditBtn').addEventListener('click', editSlide);
     previewEl.querySelector('#navNextBtn').addEventListener('click', navigateNext);
+    previewEl.querySelector('#previewCancelBtn').addEventListener('click', cancelPreview);
+}
+
+function cancelPreview() {
+    console.log('Preview cancelled by user');
+    dismissPreview('Preview cancelled.');
 }
 
 function navigateBack() {
@@ -1187,6 +1193,20 @@ function handleGlobalKeydown(e) {
             navigateNext();
         }
         return;
+    }
+
+    // Q key: cancel/quit in both progress and preview states
+    if (e.key.toLowerCase() === 'q' && document.activeElement !== state.elements.messageInput) {
+        if (state.isProcessing) {
+            e.preventDefault();
+            cancelGeneration();
+            return;
+        }
+        if (state.isInPreviewMode) {
+            e.preventDefault();
+            cancelPreview();
+            return;
+        }
     }
 
     // Other shortcuts only work in preview mode and when NOT typing in input
