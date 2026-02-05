@@ -34,6 +34,11 @@ const state = {
     skippedSlides: new Set(),
     isInPreviewMode: false,
 
+    // Edit mode state
+    originalRequest: null,      // The user's original prompt that generated current slides
+    editingSlideIndex: null,    // Which slide is being edited (null = not editing)
+    isEditMode: false,          // True when user clicked Edit and is typing
+
     // Progress state
     progressElement: null,
     cancelled: false,
@@ -91,6 +96,10 @@ function initializeDialog() {
         typeSelector: document.getElementById('typeSelector'),
         typeOptions: document.getElementById('typeOptions'),
         typeError: document.getElementById('typeError'),
+        // Edit badge elements
+        editBadge: document.getElementById('editBadge'),
+        editBadgeSlideNum: document.getElementById('editBadgeSlideNum'),
+        editBadgeCancelBtn: document.getElementById('editBadgeCancelBtn'),
         // Settings modal elements
         settingsModal: document.getElementById('settingsModal'),
         closeModalBtn: document.getElementById('closeModalBtn'),
@@ -160,6 +169,12 @@ function setupEventListeners() {
     newChatBtn.addEventListener('click', handleNewChat);
     // TODO: implement in version 2
     // settingsBtn.addEventListener('click', openSettingsModal);
+
+    // Edit badge cancel button
+    const { editBadgeCancelBtn } = state.elements;
+    if (editBadgeCancelBtn) {
+        editBadgeCancelBtn.addEventListener('click', exitEditMode);
+    }
 
     // TODO: implement in version 2
     // Context badge also opens settings
@@ -267,7 +282,13 @@ function handleSend() {
 
     if (!content || state.isProcessing) return;
 
-    // Validate type selection (required)
+    // Check if we're in edit mode - route to edit handler
+    if (state.isEditMode && state.editingSlideIndex !== null) {
+        handleEditSend(content);
+        return;
+    }
+
+    // Validate type selection (required for normal generation)
     if (!validateTypeSelection()) {
         return;
     }
@@ -296,6 +317,9 @@ function handleSend() {
     setProcessing(true);
     showProgressInPreviewArea('Generating content...');
 
+    // Save the original request for potential edit operations
+    state.originalRequest = content;
+
     // Send to WebSocket backend with selected type
     const sent = sendWebSocketMessage({
         type: state.selectedType,
@@ -303,6 +327,49 @@ function handleSend() {
     });
 
     // If WebSocket send failed, try to reconnect and show error
+    if (!sent) {
+        connectWebSocket();
+    }
+}
+
+function handleEditSend(editInstruction) {
+    // Handle sending an edit request for a specific slide
+    const { messageInput } = state.elements;
+    const slideIndex = state.editingSlideIndex;
+    const currentSlide = state.slides[slideIndex];
+
+    // Show user message BEFORE the preview (to keep preview visible)
+    const messageContent = `Edit slide ${slideIndex + 1}: ${editInstruction}`;
+    const template = document.getElementById('userMessageTemplate');
+    const clone = template.content.cloneNode(true);
+    const messageEl = clone.querySelector('.message-user');
+    messageEl.textContent = messageContent;
+    insertBeforePreview(messageEl);
+    state.messages.push({ type: 'user', content: messageContent });
+
+    // Stay in edit mode - user can make more edits to the same slide
+    // They exit explicitly by clicking X on the edit badge
+
+    // Clear input
+    messageInput.value = '';
+    messageInput.style.height = 'auto';
+
+    // Show progress in preview area
+    setProcessing(true);
+    showProgressInPreviewArea('Updating slide...');
+
+    // Send edit request to backend
+    const sent = sendWebSocketMessage({
+        type: 'edit',
+        content: editInstruction,
+        edit: {
+            slideIndex: slideIndex,
+            currentSlide: currentSlide,
+            originalRequest: state.originalRequest,
+            originalType: state.selectedType
+        }
+    });
+
     if (!sent) {
         connectWebSocket();
     }
@@ -321,6 +388,11 @@ function handleNewChat() {
     state.skippedSlides.clear();
     setProcessing(false);
     state.conversationId = null; // New conversation ID will be generated on next message
+
+    // Reset edit mode state
+    state.originalRequest = null;
+    state.editingSlideIndex = null;
+    state.isEditMode = false;
 
     // Reset type selection to default (vocabulary)
     resetTypeSelection();
@@ -424,7 +496,7 @@ function sendWebSocketMessage(message) {
             'user-id': USER_ID,
             'channel-name': CHANNEL_NAME,
             'conversation-id': state.conversationId,
-            type: message.type, // Required: 'vocabulary' | 'grammar' | 'quiz' | 'homework'
+            type: message.type, // Required: 'vocabulary' | 'grammar' | 'quiz' | 'homework' | 'edit'
             content: message.content,
             requirements: {
                 language: state.settings.language,
@@ -432,7 +504,9 @@ function sendWebSocketMessage(message) {
                 nativeLanguage: state.settings.nativeLanguage || null,
                 ageGroup: state.settings.ageGroup || null,
                 className: state.settings.className || null
-            }
+            },
+            // Include edit data when present (for edit requests)
+            ...(message.edit && { edit: message.edit })
         };
 
         console.log('Sending WebSocket message:', JSON.stringify(wsMessage, null, 2));
@@ -473,6 +547,37 @@ function handleWebSocketMessage(data) {
         // Handle progress updates (sent during content generation)
         if (message.type === 'progress') {
             updateProgressInPreviewArea(message.stage || message.message);
+            return;
+        }
+
+        // Handle edit responses (single slide update)
+        if (message.type === 'edit' && message.edit) {
+            const slideIndex = message.edit.slideIndex;
+            const existingSlide = state.slides[slideIndex];  // Pass existing slide to preserve title
+            const transformedSlide = transformEditedSlide(message.edit.slide, state.selectedType, existingSlide);
+
+            if (transformedSlide && slideIndex >= 0 && slideIndex < state.slides.length) {
+                // Replace the edited slide in the array
+                state.slides[slideIndex] = transformedSlide;
+                state.currentSlideIndex = slideIndex;
+                updateSlideDisplay();
+                hideProgress();
+                setProcessing(false);
+                addAIMessage('Slide updated.');
+                // Scroll to keep preview visible and focus input for next edit
+                if (state.previewElement) {
+                    setTimeout(() => {
+                        state.previewElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        // If still in edit mode, focus input for next edit
+                        if (state.isEditMode) {
+                            state.elements.messageInput.focus();
+                        }
+                    }, 100);
+                }
+            } else {
+                showError('Failed to apply edit. Please try again.');
+                setProcessing(false);
+            }
             return;
         }
 
@@ -590,6 +695,125 @@ function transformBackendSlides(backendSlides) {
     }));
 }
 
+// ============================================
+// SINGLE-ITEM TRANSFORM FUNCTIONS
+// These are reused by both generation and edit flows
+// ============================================
+
+function transformSingleVocabularySlide(wordData) {
+    // Transform a single vocabulary word to internal slide format
+    // Input: { word, definition, translation, example }
+    // Output: { type, title, subtitle, content, example }
+    return {
+        type: 'Vocabulary',
+        title: wordData.word || wordData.title || '',
+        subtitle: wordData.translation || wordData.subtitle || '',
+        content: wordData.definition || wordData.content || '',
+        example: wordData.example || ''
+    };
+}
+
+function transformSingleGrammarSlide(slideData) {
+    // Transform a single grammar slide to internal slide format
+    // Input: { slide-title, content: { explanation, form, usage, examples } }
+    // Output: { type, title, subtitle, content, example }
+    const content = slideData.content || slideData;
+
+    // Build content string from grammar structure
+    let contentText = '';
+
+    if (content.explanation) {
+        contentText += content.explanation + '\n\n';
+    }
+
+    if (content.form) {
+        contentText += '📝 Form:\n';
+        if (content.form.positive) contentText += `  ✓ ${content.form.positive}\n`;
+        if (content.form.negative) contentText += `  ✗ ${content.form.negative}\n`;
+        if (content.form.question) contentText += `  ? ${content.form.question}\n`;
+        contentText += '\n';
+    }
+
+    if (content.usage && Array.isArray(content.usage)) {
+        contentText += '💡 Usage:\n';
+        content.usage.forEach(u => {
+            contentText += `  • ${u}\n`;
+        });
+    }
+
+    // Build examples string
+    let exampleText = '';
+    if (content.examples && Array.isArray(content.examples)) {
+        content.examples.forEach(ex => {
+            if (ex.sentence) {
+                exampleText += ex.sentence;
+                if (ex.translation) exampleText += ` → ${ex.translation}`;
+                exampleText += '\n';
+            }
+        });
+    }
+
+    return {
+        type: 'Grammar',
+        title: slideData['slide-title'] || slideData.slideTitle || slideData.title || 'Grammar Rule',
+        subtitle: '',
+        content: contentText.trim(),
+        example: exampleText.trim()
+    };
+}
+
+function transformSingleQuizSlide(questionData, title = 'Question') {
+    // Transform a single quiz question to internal slide format
+    // Input: { question, options, correct-answer }
+    // Output: { type, title, subtitle, content, example }
+    let contentText = (questionData.question || '') + '\n\n';
+
+    if (questionData.options && Array.isArray(questionData.options)) {
+        questionData.options.forEach((opt, i) => {
+            const letter = String.fromCharCode(65 + i); // A, B, C, D
+            contentText += `${letter}. ${opt}\n`;
+        });
+    }
+
+    return {
+        type: 'Quiz',
+        title: questionData.title || title,
+        subtitle: '',
+        content: contentText.trim(),
+        example: questionData['correct-answer'] ? `Answer: ${questionData['correct-answer']}` : ''
+    };
+}
+
+function transformSingleHomeworkSlide(taskData, title = 'Task') {
+    // Transform a single homework task to internal slide format
+    // Input: { instruction, items }
+    // Output: { type, title, subtitle, content, example }
+    let contentText = '';
+
+    if (taskData.instruction) {
+        contentText += `📋 ${taskData.instruction}\n\n`;
+    }
+
+    if (taskData.items && Array.isArray(taskData.items)) {
+        taskData.items.forEach((item, i) => {
+            contentText += `${i + 1}. ${item}\n`;
+        });
+    }
+
+    return {
+        type: 'Homework',
+        title: taskData.title || title,
+        subtitle: taskData.instruction || '',
+        content: contentText.trim(),
+        example: ''
+    };
+}
+
+// ============================================
+// MULTI-SLIDE TRANSFORM FUNCTIONS
+// These create title slide + content slides for generation
+// ============================================
+
 function transformVocabularyToSlides(vocabData) {
     // Transform vocabulary response format to slides
     // Input: { title, subtitle, words: [{ word, definition, translation, example? }] }
@@ -605,16 +829,10 @@ function transformVocabularyToSlides(vocabData) {
         content: ''
     });
 
-    // Add a slide for each word
+    // Add a slide for each word using single-item transformer
     if (vocabData.words && Array.isArray(vocabData.words)) {
         vocabData.words.forEach(word => {
-            slides.push({
-                type: 'Vocabulary',
-                title: word.word || '',
-                subtitle: word.translation || '',
-                content: word.definition || '',
-                example: word.example || ''
-            });
+            slides.push(transformSingleVocabularySlide(word));
         });
     }
 
@@ -636,52 +854,10 @@ function transformGrammarToSlides(grammarData) {
         content: ''
     });
 
-    // Add a slide for each grammar section
+    // Add a slide for each grammar section using single-item transformer
     if (grammarData.slides && Array.isArray(grammarData.slides)) {
         grammarData.slides.forEach(slide => {
-            const content = slide.content || {};
-
-            // Build content string from grammar structure
-            let contentText = '';
-
-            if (content.explanation) {
-                contentText += content.explanation + '\n\n';
-            }
-
-            if (content.form) {
-                contentText += '📝 Form:\n';
-                if (content.form.positive) contentText += `  ✓ ${content.form.positive}\n`;
-                if (content.form.negative) contentText += `  ✗ ${content.form.negative}\n`;
-                if (content.form.question) contentText += `  ? ${content.form.question}\n`;
-                contentText += '\n';
-            }
-
-            if (content.usage && Array.isArray(content.usage)) {
-                contentText += '💡 Usage:\n';
-                content.usage.forEach(u => {
-                    contentText += `  • ${u}\n`;
-                });
-            }
-
-            // Build examples string
-            let exampleText = '';
-            if (content.examples && Array.isArray(content.examples)) {
-                content.examples.forEach(ex => {
-                    if (ex.sentence) {
-                        exampleText += ex.sentence;
-                        if (ex.translation) exampleText += ` → ${ex.translation}`;
-                        exampleText += '\n';
-                    }
-                });
-            }
-
-            slides.push({
-                type: 'Grammar',
-                title: slide['slide-title'] || slide.slideTitle || 'Grammar Rule',
-                subtitle: '',
-                content: contentText.trim(),
-                example: exampleText.trim()
-            });
+            slides.push(transformSingleGrammarSlide(slide));
         });
     }
 
@@ -703,25 +879,10 @@ function transformQuizToSlides(quizData) {
         content: `Type: ${quizData['quiz-type'] || 'Multiple Choice'} | Focus: ${quizData.focus || 'General'}`
     });
 
-    // Add a slide for each question
+    // Add a slide for each question using single-item transformer
     if (quizData.questions && Array.isArray(quizData.questions)) {
         quizData.questions.forEach((q, index) => {
-            let contentText = q.question + '\n\n';
-
-            if (q.options && Array.isArray(q.options)) {
-                q.options.forEach((opt, i) => {
-                    const letter = String.fromCharCode(65 + i); // A, B, C, D
-                    contentText += `${letter}. ${opt}\n`;
-                });
-            }
-
-            slides.push({
-                type: 'Quiz',
-                title: `Question ${index + 1}`,
-                subtitle: '',
-                content: contentText.trim(),
-                example: q['correct-answer'] ? `Answer: ${q['correct-answer']}` : ''
-            });
+            slides.push(transformSingleQuizSlide(q, `Question ${index + 1}`));
         });
     }
 
@@ -743,32 +904,47 @@ function transformHomeworkToSlides(homeworkData) {
         content: `Type: ${homeworkData['homework-type'] || 'Exercise'} | Focus: ${homeworkData.focus || 'General'}`
     });
 
-    // Add a slide for each task
+    // Add a slide for each task using single-item transformer
     if (homeworkData.tasks && Array.isArray(homeworkData.tasks)) {
         homeworkData.tasks.forEach((task, index) => {
-            let contentText = '';
-
-            if (task.instruction) {
-                contentText += `📋 ${task.instruction}\n\n`;
-            }
-
-            if (task.items && Array.isArray(task.items)) {
-                task.items.forEach((item, i) => {
-                    contentText += `${i + 1}. ${item}\n`;
-                });
-            }
-
-            slides.push({
-                type: 'Homework',
-                title: `Task ${index + 1}`,
-                subtitle: task.instruction || '',
-                content: contentText.trim(),
-                example: ''
-            });
+            slides.push(transformSingleHomeworkSlide(task, `Task ${index + 1}`));
         });
     }
 
     return slides;
+}
+
+function transformEditedSlide(slideData, originalType, existingSlide = null) {
+    // Transform an edited slide response using the same single-item transformers
+    // This ensures consistency between generation and edit flows
+    //
+    // existingSlide can be passed to preserve the original title (e.g., "Question 3")
+
+    switch (originalType) {
+        case 'vocabulary':
+            return transformSingleVocabularySlide(slideData);
+
+        case 'grammar':
+            return transformSingleGrammarSlide(slideData);
+
+        case 'quiz':
+            // Preserve existing title like "Question 3" if available
+            return transformSingleQuizSlide(slideData, existingSlide?.title || 'Question');
+
+        case 'homework':
+            // Preserve existing title like "Task 2" if available
+            return transformSingleHomeworkSlide(slideData, existingSlide?.title || 'Task');
+
+        default:
+            // Generic fallback
+            return {
+                type: slideData.type || 'Content',
+                title: slideData.title || '',
+                subtitle: slideData.subtitle || '',
+                content: slideData.content || '',
+                example: slideData.example || ''
+            };
+    }
 }
 
 // ============================================
@@ -1073,6 +1249,11 @@ function cancelPreview() {
 function navigateBack() {
     if (state.currentSlideIndex > 0) {
         state.currentSlideIndex--;
+        // Update edit mode to new slide if still editing
+        if (state.isEditMode) {
+            state.editingSlideIndex = state.currentSlideIndex;
+            updateEditBadgeSlideNumber(state.currentSlideIndex + 1);
+        }
         updateSlideDisplay();
     }
 }
@@ -1080,6 +1261,11 @@ function navigateBack() {
 function navigateNext() {
     if (state.currentSlideIndex < state.slides.length - 1) {
         state.currentSlideIndex++;
+        // Update edit mode to new slide if still editing
+        if (state.isEditMode) {
+            state.editingSlideIndex = state.currentSlideIndex;
+            updateEditBadgeSlideNumber(state.currentSlideIndex + 1);
+        }
         updateSlideDisplay();
     } else {
         // On last slide, "Done" inserts all slides
@@ -1090,20 +1276,88 @@ function navigateNext() {
 function skipSlide() {
     state.skippedSlides.add(state.currentSlideIndex);
     if (state.currentSlideIndex < state.slides.length - 1) {
-        navigateNext();
+        state.currentSlideIndex++;
+        // Update edit mode to new slide if still editing
+        if (state.isEditMode) {
+            state.editingSlideIndex = state.currentSlideIndex;
+            updateEditBadgeSlideNumber(state.currentSlideIndex + 1);
+        }
+        updateSlideDisplay();
     } else {
         updateSlideDisplay();
     }
 }
 
 function editSlide() {
-    // Focus input with current slide info for editing
-    const slide = state.slides[state.currentSlideIndex];
-    const { messageInput } = state.elements;
+    // Enter edit mode for the current slide
+    const { messageInput, typeSelector } = state.elements;
 
-    messageInput.value = `Edit slide ${state.currentSlideIndex + 1}: ${slide.title || ''}`;
+    // Set edit mode state
+    state.isEditMode = true;
+    state.editingSlideIndex = state.currentSlideIndex;
+
+    // Change input placeholder to indicate edit mode
+    messageInput.placeholder = `Describe what to change on slide ${state.currentSlideIndex + 1}...`;
+    messageInput.value = '';
+
+    // Hide type selector (not relevant during edit)
+    if (typeSelector) {
+        typeSelector.classList.add('hidden');
+    }
+
+    // Show edit badge
+    showEditBadge(state.currentSlideIndex + 1);
+
+    // Focus the input
     messageInput.focus();
-    messageInput.dispatchEvent(new Event('input'));
+}
+
+function exitEditMode() {
+    // Exit edit mode and restore normal state
+    const { messageInput, typeSelector } = state.elements;
+
+    // Reset edit mode state
+    state.isEditMode = false;
+    state.editingSlideIndex = null;
+
+    // Restore original placeholder
+    messageInput.placeholder = 'Ask Teachers Center to help you create slides...';
+
+    // Show type selector again
+    if (typeSelector) {
+        typeSelector.classList.remove('hidden');
+    }
+
+    // Remove edit badge
+    removeEditBadge();
+}
+
+function showEditBadge(slideNumber) {
+    // Show the edit badge with the slide number
+    const { editBadge, editBadgeSlideNum } = state.elements;
+    if (editBadge && editBadgeSlideNum) {
+        editBadgeSlideNum.textContent = slideNumber;
+        editBadge.classList.remove('hidden');
+    }
+}
+
+function updateEditBadgeSlideNumber(slideNumber) {
+    // Update the slide number in the edit badge and placeholder (when navigating while in edit mode)
+    const { editBadgeSlideNum, messageInput } = state.elements;
+    if (editBadgeSlideNum) {
+        editBadgeSlideNum.textContent = slideNumber;
+    }
+    if (messageInput) {
+        messageInput.placeholder = `Describe what to change on slide ${slideNumber}...`;
+    }
+}
+
+function removeEditBadge() {
+    // Hide the edit badge
+    const { editBadge } = state.elements;
+    if (editBadge) {
+        editBadge.classList.add('hidden');
+    }
 }
 
 function showInsertConfirmation() {
@@ -1128,6 +1382,11 @@ function insertAllSlides() {
     if (slidesToInsert.length === 0) {
         showError('No slides selected for insertion.');
         return;
+    }
+
+    // Exit edit mode if active
+    if (state.isEditMode) {
+        exitEditMode();
     }
 
     // Hide preview immediately
@@ -1193,6 +1452,15 @@ function handleGlobalKeydown(e) {
             navigateNext();
         }
         return;
+    }
+
+    // Escape key: exit edit mode if editing, otherwise focus input
+    if (e.key === 'Escape') {
+        if (state.isEditMode) {
+            e.preventDefault();
+            exitEditMode();
+            return;
+        }
     }
 
     // Q key: cancel/quit in both progress and preview states
@@ -1360,6 +1628,26 @@ function appendToChatBody(element) {
 
     // Scroll to bottom
     chatBody.scrollTop = chatBody.scrollHeight;
+}
+
+function insertBeforePreview(element) {
+    // Insert an element before the preview container (used for edit messages)
+    // This keeps the preview visible after edits
+    const { chatBody, welcomeState } = state.elements;
+
+    welcomeState.classList.add('hidden');
+
+    if (state.previewElement && state.previewElement.parentNode === chatBody) {
+        chatBody.insertBefore(element, state.previewElement);
+    } else {
+        // Fallback to append if no preview
+        chatBody.appendChild(element);
+    }
+
+    // Scroll to show preview
+    if (state.previewElement) {
+        state.previewElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
 }
 
 function scrollToBottom() {
