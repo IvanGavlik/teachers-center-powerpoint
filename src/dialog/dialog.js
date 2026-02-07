@@ -51,13 +51,15 @@ const state = {
     selectedType: 'vocabulary', // 'vocabulary' | 'grammar' | 'quiz' | 'homework'
 
     // Settings
+    settingsConfirmed: false,
     settings: {
         language: 'English',
         level: 'B1',
-        className: '',
-        nativeLanguage: '',
         ageGroup: ''
     },
+
+    // Current file path (for per-file settings)
+    currentFilePath: null,
 
     // WebSocket state
     ws: null,
@@ -87,11 +89,8 @@ function initializeDialog() {
         messageInput: document.getElementById('messageInput'),
         inputContainer: document.getElementById('inputContainer'),
         closeBtn: document.getElementById('closeBtn'),
-        // TODO: implement in version 2
-        // settingsBtn: document.getElementById('settingsBtn'),
         newChatBtn: document.getElementById('newChatBtn'),
-        // TODO: implement in version 2
-        // contextBadge: document.getElementById('contextBadge'),
+        contextBadge: document.getElementById('contextBadge'),
         // Type selector elements
         typeSelector: document.getElementById('typeSelector'),
         typeOptions: document.getElementById('typeOptions'),
@@ -107,8 +106,6 @@ function initializeDialog() {
         saveSettingsBtn: document.getElementById('saveSettingsBtn'),
         settingsLanguage: document.getElementById('settingsLanguage'),
         settingsLevel: document.getElementById('settingsLevel'),
-        settingsClassName: document.getElementById('settingsClassName'),
-        settingsNativeLanguage: document.getElementById('settingsNativeLanguage'),
         settingsAgeGroup: document.getElementById('settingsAgeGroup')
     };
 
@@ -148,6 +145,14 @@ function setupEventListeners() {
         }
     });
 
+    // Block input focus until settings are confirmed
+    messageInput.addEventListener('focus', () => {
+        if (!state.settingsConfirmed) {
+            messageInput.blur();
+            openSettingsModal();
+        }
+    });
+
     // Auto-resize textarea
     messageInput.addEventListener('input', () => {
         messageInput.style.height = 'auto';
@@ -167,8 +172,6 @@ function setupEventListeners() {
     // Header buttons
     closeBtn.addEventListener('click', handleClose);
     newChatBtn.addEventListener('click', handleNewChat);
-    // TODO: implement in version 2
-    // settingsBtn.addEventListener('click', openSettingsModal);
 
     // Edit badge cancel button
     const { editBadgeCancelBtn } = state.elements;
@@ -176,12 +179,11 @@ function setupEventListeners() {
         editBadgeCancelBtn.addEventListener('click', exitEditMode);
     }
 
-    // TODO: implement in version 2
-    // Context badge also opens settings
-    // const { contextBadge } = state.elements;
-    // if (contextBadge) {
-    //     contextBadge.addEventListener('click', openSettingsModal);
-    // }
+    // Context badge opens settings
+    const { contextBadge } = state.elements;
+    if (contextBadge) {
+        contextBadge.addEventListener('click', openSettingsModal);
+    }
 
     // Settings modal buttons
     const { closeModalBtn, cancelSettingsBtn, saveSettingsBtn, settingsModal } = state.elements;
@@ -277,6 +279,11 @@ function validateTypeSelection() {
 // ============================================
 
 function handleSend() {
+    if (!state.settingsConfirmed) {
+        openSettingsModal();
+        return;
+    }
+
     const { messageInput } = state.elements;
     const content = messageInput.value.trim();
 
@@ -501,9 +508,7 @@ function sendWebSocketMessage(message) {
             requirements: {
                 language: state.settings.language,
                 level: state.settings.level,
-                nativeLanguage: state.settings.nativeLanguage || null,
-                ageGroup: state.settings.ageGroup || null,
-                className: state.settings.className || null
+                'age-group': state.settings.ageGroup || null
             },
             // Include edit data when present (for edit requests)
             ...(message.edit && { edit: message.edit })
@@ -536,10 +541,10 @@ function handleWebSocketMessage(data) {
 
         // Handle different message types from backend
         // Check for known fields first (backend may not always send 'type')
-        if (message['requirements-not-meet']) {
+        if (message['requirements-not-met']) {
             // Backend needs more information
             hideProgress();
-            addAIMessage(message['requirements-not-meet']);
+            addAIMessage(message['requirements-not-met']);
             setProcessing(false);
             return;
         }
@@ -1529,26 +1534,60 @@ function openSettingsModal() {
 }
 
 function closeSettingsModal() {
+    if (!state.settingsConfirmed) {
+        return; // Can't dismiss without saving on first use
+    }
     const { settingsModal } = state.elements;
     settingsModal.classList.add('hidden');
     // Reset form to saved values
     loadSettingsToForm();
 }
 
+function getSettingsStorageKey() {
+    // Generate a localStorage key based on the current file path
+    // Falls back to a default key if file path is not available
+    if (state.currentFilePath) {
+        // Sanitize the path to create a valid key
+        const sanitizedPath = state.currentFilePath.replace(/[^a-zA-Z0-9]/g, '_');
+        return `teachersCenterSettings_${sanitizedPath}`;
+    }
+    return 'teachersCenterSettings_default';
+}
+
 function loadSettings() {
-    // Load settings from localStorage
-    const savedSettings = localStorage.getItem('teachersCenterSettings');
+    // Try to get the current file path from Office context
+    try {
+        // Office.context.document.url gives us the file path
+        state.currentFilePath = Office.context.document?.url || null;
+        console.log('Current file path:', state.currentFilePath);
+    } catch (error) {
+        console.warn('Could not get file path from Office context:', error);
+        state.currentFilePath = null;
+    }
+
+    // Load settings from localStorage using file-specific key
+    const storageKey = getSettingsStorageKey();
+    const savedSettings = localStorage.getItem(storageKey);
+
     if (savedSettings) {
         state.settings = JSON.parse(savedSettings);
+        state.settingsConfirmed = true;
+        console.log('Loaded settings for file:', storageKey);
     } else {
         // Default settings
         state.settings = {
             language: 'English',
             level: 'B1',
-            className: '',
-            nativeLanguage: '',
             ageGroup: ''
         };
+        state.settingsConfirmed = false;
+        console.log('No settings found for file, using defaults');
+
+        // Auto-open settings modal on first use for this file
+        // Use setTimeout to ensure the modal is ready
+        setTimeout(() => {
+            openSettingsModal();
+        }, 100);
     }
 
     // Apply settings to form and context badge
@@ -1557,29 +1596,30 @@ function loadSettings() {
 }
 
 function loadSettingsToForm() {
-    const { settingsLanguage, settingsLevel, settingsClassName, settingsNativeLanguage, settingsAgeGroup } = state.elements;
+    const { settingsLanguage, settingsLevel, settingsAgeGroup } = state.elements;
 
     settingsLanguage.value = state.settings.language;
     settingsLevel.value = state.settings.level;
-    settingsClassName.value = state.settings.className;
-    settingsNativeLanguage.value = state.settings.nativeLanguage;
     settingsAgeGroup.value = state.settings.ageGroup;
 }
 
 function saveSettings() {
-    const { settingsLanguage, settingsLevel, settingsClassName, settingsNativeLanguage, settingsAgeGroup } = state.elements;
+    const { settingsLanguage, settingsLevel, settingsAgeGroup } = state.elements;
 
     // Update state
     state.settings = {
         language: settingsLanguage.value,
         level: settingsLevel.value,
-        className: settingsClassName.value,
-        nativeLanguage: settingsNativeLanguage.value,
         ageGroup: settingsAgeGroup.value
     };
 
-    // Save to localStorage
-    localStorage.setItem('teachersCenterSettings', JSON.stringify(state.settings));
+    // Save to localStorage using file-specific key
+    const storageKey = getSettingsStorageKey();
+    localStorage.setItem(storageKey, JSON.stringify(state.settings));
+    console.log('Saved settings for file:', storageKey);
+
+    // Mark settings as confirmed
+    state.settingsConfirmed = true;
 
     // Update context badge
     updateContextBadge();
