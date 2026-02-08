@@ -1,7 +1,7 @@
 /* global Office, PowerPoint */
 
 /**
- * Teachers Center - Commands Module
+ * Teacher Assistant - Commands Module
  * Handles dialog lifecycle and PowerPoint slide operations
  */
 
@@ -16,11 +16,11 @@ Office.onReady(() => {
 // ============================================
 
 /**
- * Opens the Teachers Center dialog directly from the ribbon button
+ * Opens the Teacher Assistant dialog directly from the ribbon button
  * @param {Office.AddinCommands.Event} event
  */
 function openTeachersCenterDialog(event) {
-    console.log('Opening Teachers Center dialog...');
+    console.log('Opening Teacher Assistant dialog...');
 
     // If dialog is already open, just complete the event
     if (dialog) {

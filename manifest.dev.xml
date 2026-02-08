@@ -12,7 +12,7 @@
   <ProviderName>Contoso</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
 
-  <DisplayName DefaultValue="Teachers Center PowerPoint (Dev)"/>
+  <DisplayName DefaultValue="Teacher Assistant PowerPoint (Dev)"/>
   <Description DefaultValue="Development version - localhost"/>
 
   <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png"/>
@@ -117,15 +117,15 @@
 
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="Get started with your sample add-in!"/>
-        <bt:String id="CommandsGroup.Label" DefaultValue="Teachers Center"/>
-        <bt:String id="TaskpaneButton.Label" DefaultValue="Teachers Center"/>
+        <bt:String id="CommandsGroup.Label" DefaultValue="Teacher Assistant"/>
+        <bt:String id="TaskpaneButton.Label" DefaultValue="Teacher Assistant"/>
       </bt:ShortStrings>
 
       <bt:LongStrings>
         <bt:String id="GetStarted.Description"
-                   DefaultValue="Your sample add-in loaded successfully. Go to the HOME tab and click the 'Teachers Center' button to get started."/>
+                   DefaultValue="Your sample add-in loaded successfully. Go to the HOME tab and click the 'Teacher Assistant' button to get started."/>
         <bt:String id="TaskpaneButton.Tooltip"
-                   DefaultValue="Click to open Teachers Center"/>
+                   DefaultValue="Click to open Teacher Assistant"/>
       </bt:LongStrings>
 
     </Resources>

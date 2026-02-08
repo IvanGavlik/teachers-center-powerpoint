@@ -12,7 +12,7 @@
   <ProviderName>Contoso</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
 
-  <DisplayName DefaultValue="Teachers Center PowerPoint"/>
+  <DisplayName DefaultValue="Teacher Assistant PowerPoint"/>
   <Description DefaultValue="A template to get started."/>
 
   <IconUrl DefaultValue="https://teachers-center-powerpoint.onrender.com/assets/icon-32.png"/>

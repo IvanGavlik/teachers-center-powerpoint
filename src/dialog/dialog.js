@@ -1,7 +1,7 @@
 /* global Office */
 
 /**
- * Teachers Center Dialog - Component Logic and State Management
+ * Teacher Assistant Dialog - Component Logic and State Management
  * Implements Claude Code-style preview-then-execute workflow
  */
 
@@ -1356,7 +1356,7 @@ function exitEditMode() {
     state.editingSlideIndex = null;
 
     // Restore original placeholder
-    messageInput.placeholder = 'Ask Teachers Center to help you create slides...';
+    messageInput.placeholder = 'Ask Teacher Assistant to help you create slides...';
 
     // Show type selector again
     if (typeSelector) {
