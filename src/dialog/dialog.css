@@ -961,6 +961,7 @@ textarea:focus-visible {
 }
 
 .settings-group input[type="text"],
+.settings-group input,
 .settings-group select {
     width: 100%;
     padding: var(--spacing-sm) var(--spacing-md);
@@ -975,11 +976,13 @@ textarea:focus-visible {
 }
 
 .settings-group input[type="text"]:hover,
+.settings-group input:hover,
 .settings-group select:hover {
     border-color: var(--text-primary);
 }
 
 .settings-group input[type="text"]:focus,
+.settings-group input:focus,
 .settings-group select:focus {
     outline: none;
     border-color: var(--accent-primary);
