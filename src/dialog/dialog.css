@@ -400,9 +400,11 @@ body {
     font-size: 14px !important;
 }
 
-.nav-btn:hover:not(:disabled) {
-    border-color: var(--accent-primary);
-    color: var(--accent-primary);
+.nav-btn:hover:not(:disabled),
+.nav-btn:active:not(:disabled),
+.nav-btn.nav-btn-pressed {
+    border-color: #000;
+    color: #000;
 }
 
 .nav-btn:disabled {
@@ -416,10 +418,10 @@ body {
     color: white;
 }
 
-.nav-btn-primary:hover:not(:disabled) {
-    background: var(--accent-hover);
-    border-color: var(--accent-hover);
-    color: white;
+.nav-btn-primary:hover:not(:disabled),
+.nav-btn-primary:active:not(:disabled),
+.nav-btn-primary.nav-btn-pressed {
+    border-color: #000;
 }
 
 .nav-shortcut {

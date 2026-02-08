@@ -155,10 +155,12 @@
                 <button class="nav-btn" id="navBackBtn" disabled>
                     <span class="material-icons" style="font-size: 18px;">arrow_back</span>
                     Back
+                    <span class="nav-shortcut">Bksp</span>
                 </button>
                 <button class="nav-btn" id="navSkipBtn">
-                    Skip
-                    <span class="nav-shortcut">S</span>
+                    <span class="material-icons" style="font-size: 18px;">delete_outline</span>
+                    Remove
+                    <span class="nav-shortcut">R</span>
                 </button>
                 <button class="nav-btn" id="navEditBtn">
                     <span class="material-icons" style="font-size: 18px;">edit</span>
@@ -166,8 +168,8 @@
                     <span class="nav-shortcut">E</span>
                 </button>
                 <button class="nav-btn nav-btn-primary" id="navNextBtn">
-                    Next
                     <span class="material-icons" style="font-size: 18px;">arrow_forward</span>
+                    Next
                     <span class="nav-shortcut">Enter</span>
                 </button>
             </div>
@@ -219,6 +221,19 @@
                         <option value="B2">B2 - Upper Intermediate</option>
                         <option value="C1">C1 - Advanced</option>
                         <option value="C2">C2 - Proficient</option>
+                    </select>
+                </div>
+
+                <div class="settings-group">
+                    <label for="settingsNativeLanguage">Use Students native language</label>
+                    <select id="settingsNativeLanguage">
+                        <option value="No" selected>No</option>
+                        <option value="English">English</option>
+                        <option value="German">German</option>
+                        <option value="French">French</option>
+                        <option value="Spanish">Spanish</option>
+                        <option value="Italian">Italian</option>
+                        <option value="Portuguese">Portuguese</option>
                     </select>
                 </div>
 

@@ -31,7 +31,6 @@ const state = {
     // Preview state
     slides: [],
     currentSlideIndex: 0,
-    skippedSlides: new Set(),
     isInPreviewMode: false,
 
     // Edit mode state
@@ -55,6 +54,7 @@ const state = {
     settings: {
         language: 'English',
         level: 'B1',
+        nativeLanguage: 'No',
         ageGroup: ''
     },
 
@@ -106,6 +106,7 @@ function initializeDialog() {
         saveSettingsBtn: document.getElementById('saveSettingsBtn'),
         settingsLanguage: document.getElementById('settingsLanguage'),
         settingsLevel: document.getElementById('settingsLevel'),
+        settingsNativeLanguage: document.getElementById('settingsNativeLanguage'),
         settingsAgeGroup: document.getElementById('settingsAgeGroup')
     };
 
@@ -302,8 +303,8 @@ function handleSend() {
 
     // If there's an existing preview, dismiss it first
     if (state.isInPreviewMode && state.slides.length > 0) {
-        const skippedCount = state.slides.length - state.skippedSlides.size;
-        dismissPreview(`${skippedCount} slide${skippedCount !== 1 ? 's' : ''} not inserted`);
+        const count = state.slides.length;
+        dismissPreview(`${count} slide${count !== 1 ? 's' : ''} not inserted`);
     }
 
     // Reset state for new request
@@ -392,7 +393,6 @@ function handleNewChat() {
     state.messages = [];
     state.pendingRequest = null;
     state.currentSlideIndex = 0;
-    state.skippedSlides.clear();
     setProcessing(false);
     state.conversationId = null; // New conversation ID will be generated on next message
 
@@ -508,6 +508,7 @@ function sendWebSocketMessage(message) {
             requirements: {
                 language: state.settings.language,
                 level: state.settings.level,
+                'native-language': state.settings.nativeLanguage || 'No',
                 'age-group': state.settings.ageGroup || null
             },
             // Include edit data when present (for edit requests)
@@ -1137,7 +1138,6 @@ function dismissPreview(message) {
     // Clear preview state
     state.slides = [];
     state.previewElement = null;
-    state.skippedSlides.clear();
     state.isInPreviewMode = false;
 }
 
@@ -1156,7 +1156,6 @@ function showSlidePreview(slides, summary) {
 
     state.slides = slides;
     state.currentSlideIndex = 0;
-    state.skippedSlides.clear();
     state.isInPreviewMode = true;
     setProcessing(false);  // Ready for navigation
     console.log('isInPreviewMode set to TRUE, isProcessing set to FALSE');
@@ -1222,17 +1221,17 @@ function updateSlideDisplay() {
     backBtn.disabled = state.currentSlideIndex === 0;
 
     // Change "Next" to "Insert X Slides" on last slide
-    const nonSkipped = state.slides.length - state.skippedSlides.size;
+    const slideCount = state.slides.length;
     if (state.currentSlideIndex === state.slides.length - 1) {
         nextBtn.innerHTML = `
-            Insert ${nonSkipped} Slide${nonSkipped !== 1 ? 's' : ''}
             <span class="material-icons" style="font-size: 18px;">playlist_add</span>
+            Insert ${slideCount} Slide${slideCount !== 1 ? 's' : ''}
             <span class="nav-shortcut">Enter</span>
         `;
     } else {
         nextBtn.innerHTML = `
-            Next
             <span class="material-icons" style="font-size: 18px;">arrow_forward</span>
+            Next
             <span class="nav-shortcut">Enter</span>
         `;
     }
@@ -1240,7 +1239,7 @@ function updateSlideDisplay() {
 
 function setupPreviewNavigation(previewEl) {
     previewEl.querySelector('#navBackBtn').addEventListener('click', navigateBack);
-    previewEl.querySelector('#navSkipBtn').addEventListener('click', skipSlide);
+    previewEl.querySelector('#navSkipBtn').addEventListener('click', removeSlide);
     previewEl.querySelector('#navEditBtn').addEventListener('click', editSlide);
     previewEl.querySelector('#navNextBtn').addEventListener('click', navigateNext);
     previewEl.querySelector('#previewCancelBtn').addEventListener('click', cancelPreview);
@@ -1278,19 +1277,27 @@ function navigateNext() {
     }
 }
 
-function skipSlide() {
-    state.skippedSlides.add(state.currentSlideIndex);
-    if (state.currentSlideIndex < state.slides.length - 1) {
-        state.currentSlideIndex++;
-        // Update edit mode to new slide if still editing
-        if (state.isEditMode) {
-            state.editingSlideIndex = state.currentSlideIndex;
-            updateEditBadgeSlideNumber(state.currentSlideIndex + 1);
-        }
-        updateSlideDisplay();
-    } else {
-        updateSlideDisplay();
+function removeSlide() {
+    if (state.slides.length <= 1) {
+        // Last slide — removing it means nothing left to insert
+        state.slides.splice(0, 1);
+        dismissPreview('All slides removed.');
+        return;
     }
+
+    state.slides.splice(state.currentSlideIndex, 1);
+
+    // Adjust index: stay at same position unless we removed the last slide
+    if (state.currentSlideIndex >= state.slides.length) {
+        state.currentSlideIndex = state.slides.length - 1;
+    }
+
+    // Update edit mode to new slide if still editing
+    if (state.isEditMode) {
+        state.editingSlideIndex = state.currentSlideIndex;
+        updateEditBadgeSlideNumber(state.currentSlideIndex + 1);
+    }
+    updateSlideDisplay();
 }
 
 function editSlide() {
@@ -1366,10 +1373,8 @@ function removeEditBadge() {
 }
 
 function showInsertConfirmation() {
-    const nonSkipped = state.slides.length - state.skippedSlides.size;
-
-    if (nonSkipped === 0) {
-        showError('All slides have been skipped. Nothing to insert.');
+    if (state.slides.length === 0) {
+        showError('No slides to insert.');
         return;
     }
 
@@ -1381,13 +1386,12 @@ function showInsertConfirmation() {
 }
 
 function insertAllSlides() {
-    // Get slides to insert (excluding skipped)
-    const slidesToInsert = state.slides.filter((_, index) => !state.skippedSlides.has(index));
-
-    if (slidesToInsert.length === 0) {
-        showError('No slides selected for insertion.');
+    if (state.slides.length === 0) {
+        showError('No slides to insert.');
         return;
     }
+
+    const slidesToInsert = state.slides;
 
     // Exit edit mode if active
     if (state.isEditMode) {
@@ -1442,6 +1446,14 @@ function showError(message) {
 // KEYBOARD NAVIGATION
 // ============================================
 
+function flashButton(btnId) {
+    if (!state.previewElement) return;
+    const btn = state.previewElement.querySelector(`#${btnId}`);
+    if (!btn || btn.disabled) return;
+    btn.classList.add('nav-btn-pressed');
+    setTimeout(() => btn.classList.remove('nav-btn-pressed'), 150);
+}
+
 function handleGlobalKeydown(e) {
     // Handle Enter key globally
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1454,6 +1466,7 @@ function handleGlobalKeydown(e) {
             handleSend();
         } else if (state.isInPreviewMode && !state.isProcessing) {
             // Empty input + in preview mode → Next
+            flashButton('navNextBtn');
             navigateNext();
         }
         return;
@@ -1487,13 +1500,15 @@ function handleGlobalKeydown(e) {
     if (document.activeElement === state.elements.messageInput) return;
 
     switch (e.key.toLowerCase()) {
-        case 's':
+        case 'r':
             e.preventDefault();
-            skipSlide();
+            flashButton('navSkipBtn');
+            removeSlide();
             break;
 
         case 'e':
             e.preventDefault();
+            flashButton('navEditBtn');
             editSlide();
             break;
 
@@ -1511,6 +1526,7 @@ function handleGlobalKeydown(e) {
         case 'backspace':
             if (state.currentSlideIndex > 0) {
                 e.preventDefault();
+                flashButton('navBackBtn');
                 navigateBack();
             }
             break;
@@ -1518,6 +1534,7 @@ function handleGlobalKeydown(e) {
         case 'arrowright':
             if (state.currentSlideIndex < state.slides.length - 1) {
                 e.preventDefault();
+                flashButton('navNextBtn');
                 navigateNext();
             }
             break;
@@ -1578,6 +1595,7 @@ function loadSettings() {
         state.settings = {
             language: 'English',
             level: 'B1',
+            nativeLanguage: 'No',
             ageGroup: ''
         };
         state.settingsConfirmed = false;
@@ -1596,20 +1614,22 @@ function loadSettings() {
 }
 
 function loadSettingsToForm() {
-    const { settingsLanguage, settingsLevel, settingsAgeGroup } = state.elements;
+    const { settingsLanguage, settingsLevel, settingsNativeLanguage, settingsAgeGroup } = state.elements;
 
     settingsLanguage.value = state.settings.language;
     settingsLevel.value = state.settings.level;
+    settingsNativeLanguage.value = state.settings.nativeLanguage || 'No';
     settingsAgeGroup.value = state.settings.ageGroup;
 }
 
 function saveSettings() {
-    const { settingsLanguage, settingsLevel, settingsAgeGroup } = state.elements;
+    const { settingsLanguage, settingsLevel, settingsNativeLanguage, settingsAgeGroup } = state.elements;
 
     // Update state
     state.settings = {
         language: settingsLanguage.value,
         level: settingsLevel.value,
+        nativeLanguage: settingsNativeLanguage.value,
         ageGroup: settingsAgeGroup.value
     };
 
