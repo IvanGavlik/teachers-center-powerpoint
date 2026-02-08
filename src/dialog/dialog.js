@@ -721,36 +721,23 @@ function transformSingleVocabularySlide(wordData) {
 
 function transformSingleGrammarSlide(slideData) {
     // Transform a single grammar slide to internal slide format
-    // Input: { slide-title, content: { explanation, form, usage, examples } }
+    // New simplified format: { slide-title, content (string), examples (array) }
     // Output: { type, title, subtitle, content, example }
-    const content = slideData.content || slideData;
 
-    // Build content string from grammar structure
+    // Content is now a free-form string (or legacy object — handle both)
     let contentText = '';
-
-    if (content.explanation) {
-        contentText += content.explanation + '\n\n';
+    if (typeof slideData.content === 'string') {
+        contentText = slideData.content;
+    } else if (typeof slideData.content === 'object' && slideData.content !== null) {
+        // Legacy format fallback: extract explanation text
+        contentText = slideData.content.explanation || '';
     }
 
-    if (content.form) {
-        contentText += '📝 Form:\n';
-        if (content.form.positive) contentText += `  ✓ ${content.form.positive}\n`;
-        if (content.form.negative) contentText += `  ✗ ${content.form.negative}\n`;
-        if (content.form.question) contentText += `  ? ${content.form.question}\n`;
-        contentText += '\n';
-    }
-
-    if (content.usage && Array.isArray(content.usage)) {
-        contentText += '💡 Usage:\n';
-        content.usage.forEach(u => {
-            contentText += `  • ${u}\n`;
-        });
-    }
-
-    // Build examples string
+    // Build examples string from the examples array
     let exampleText = '';
-    if (content.examples && Array.isArray(content.examples)) {
-        content.examples.forEach(ex => {
+    const examples = slideData.examples || (slideData.content && slideData.content.examples) || [];
+    if (Array.isArray(examples)) {
+        examples.forEach(ex => {
             if (ex.sentence) {
                 exampleText += ex.sentence;
                 if (ex.translation) exampleText += ` → ${ex.translation}`;
@@ -770,8 +757,33 @@ function transformSingleGrammarSlide(slideData) {
 
 function transformSingleQuizSlide(questionData, title = 'Question') {
     // Transform a single quiz question to internal slide format
-    // Input: { question, options, correct-answer }
+    // Input: { question, options } or { slide-questions: [{question, options}, ...] }
     // Output: { type, title, subtitle, content, example }
+
+    // Handle grouped questions (multiple questions per slide)
+    const groupedQuestions = questionData['slide-questions'] || questionData.slideQuestions;
+    if (groupedQuestions && Array.isArray(groupedQuestions)) {
+        let contentText = '';
+        groupedQuestions.forEach((q, i) => {
+            contentText += `${i + 1}. ${q.question || ''}\n`;
+            if (q.options && Array.isArray(q.options)) {
+                q.options.forEach((opt, j) => {
+                    const letter = String.fromCharCode(65 + j);
+                    contentText += `   ${letter}. ${opt}\n`;
+                });
+            }
+            contentText += '\n';
+        });
+        return {
+            type: 'Quiz',
+            title: questionData.title || title,
+            subtitle: '',
+            content: contentText.trim(),
+            example: ''
+        };
+    }
+
+    // Single question per slide
     let contentText = (questionData.question || '') + '\n\n';
 
     if (questionData.options && Array.isArray(questionData.options)) {
@@ -786,7 +798,7 @@ function transformSingleQuizSlide(questionData, title = 'Question') {
         title: questionData.title || title,
         subtitle: '',
         content: contentText.trim(),
-        example: questionData['correct-answer'] ? `Answer: ${questionData['correct-answer']}` : ''
+        example: ''
     };
 }
 
@@ -885,10 +897,21 @@ function transformQuizToSlides(quizData) {
         content: `Type: ${quizData['quiz-type'] || 'Multiple Choice'} | Focus: ${quizData.focus || 'General'}`
     });
 
-    // Add a slide for each question using single-item transformer
+    // Add slides for questions — supports both flat and grouped formats
     if (quizData.questions && Array.isArray(quizData.questions)) {
+        let questionNum = 0;
         quizData.questions.forEach((q, index) => {
-            slides.push(transformSingleQuizSlide(q, `Question ${index + 1}`));
+            const groupedQuestions = q['slide-questions'] || q.slideQuestions;
+            if (groupedQuestions && Array.isArray(groupedQuestions)) {
+                // Grouped: { slide-questions: [{question, options}, ...] }
+                const from = questionNum + 1;
+                questionNum += groupedQuestions.length;
+                slides.push(transformSingleQuizSlide(q, `Questions ${from}–${questionNum}`));
+            } else if (q.question) {
+                // Single: { question, options }
+                questionNum++;
+                slides.push(transformSingleQuizSlide(q, `Question ${questionNum}`));
+            }
         });
     }
 
