@@ -4,17 +4,14 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Teacher Assistant PowerPoint</title>
+    <title>Teacher Assistant</title>
 
     <!-- Office JavaScript API -->
     <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 
     <!-- Google Fonts and Icons -->
-    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-
-    <!-- Template styles -->
-    <link href="taskpane.css" rel="stylesheet" type="text/css" />
 </head>
 
 <body>
@@ -23,140 +20,167 @@
     </section>
 
     <div id="app-body" style="display: none;">
-        <!-- Launcher View (shown by default) -->
-        <div id="launcher-view" class="launcher-container">
-            <div class="launcher-header">
-                <span class="material-icons launcher-logo">school</span>
-                <h1>Teacher Assistant</h1>
+
+        <!-- ============================================
+             HEADER - Compact for taskpane
+             ============================================ -->
+        <header class="header">
+            <div class="header-left">
+                <h1 class="header-title">
+                    <span class="material-icons">school</span>
+                    Teacher Assistant
+                </h1>
+                <span class="context-badge" id="contextBadge" title="Click to change settings">B1 English</span>
             </div>
-
-            <div class="launcher-body">
-                <p class="launcher-description">
-                    Create vocabulary slides, quizzes, and more with AI assistance.
-                </p>
-
-                <button id="openDialogBtn" class="open-dialog-btn">
-                    <span class="material-icons">open_in_new</span>
-                    Open Teacher Assistant
-                </button>
-
-                <p class="launcher-hint">
-                    Opens in a separate window for a better experience
-                </p>
-            </div>
-
-            <div class="launcher-status" id="launcherStatus">
-                <span class="material-icons status-icon">info</span>
-                <span id="statusText">Ready</span>
-            </div>
-        </div>
-
-        <!-- Original Chat Interface (hidden, kept for reference) -->
-        <div id="chat-view" class="chat-container" style="display: none;">
-            <!-- Header: Category Chips -->
-            <div id="header" class="chat-header">
-                <div class="chip-group">
-                    <button class="chip active" data-category="vocabulary">
-                        <span class="material-icons chip-icon">book</span>
-                        Vocabulary
-                    </button>
-                    <button class="chip" data-category="quizzes">
-                        <span class="material-icons chip-icon">quiz</span>
-                        Quizzes
-                    </button>
-                    <button class="chip" data-category="homework">
-                        <span class="material-icons chip-icon">assignment</span>
-                        Homework
-                    </button>
-                    <button class="chip" data-category="grammar">
-                        <span class="material-icons chip-icon">spellcheck</span>
-                        Grammar
-                    </button>
-                    <button class="chip" data-category="reading">
-                        <span class="material-icons chip-icon">menu_book</span>
-                        Reading
-                    </button>
-                    <button class="chip" data-category="listening">
-                        <span class="material-icons chip-icon">headphones</span>
-                        Listening
-                    </button>
-                </div>
-            </div>
-
-            <!-- Context Bar -->
-            <div class="context-bar">
-                <span class="context-info">
-                    <span class="material-icons context-icon">school</span>
-                    <span id="contextDisplay">B1 English • Class 7A</span>
-                </span>
-                <button class="settings-icon-btn" id="settingsBtn" title="Edit class settings">
-                    <span class="material-icons">settings</span>
+            <div class="header-actions">
+                <button class="icon-btn" id="newChatBtn" title="New Chat">
+                    <span class="material-icons">add_comment</span>
                 </button>
             </div>
+        </header>
 
-            <!-- Body: Messages Area -->
-            <div id="body" class="chat-body">
-                <!-- Sample AI Message -->
-                <div class="message ai-message">
-                    <div class="message-avatar">
-                        <span class="material-icons">smart_toy</span>
-                    </div>
-                    <div class="message-content">
-                        <div class="message-text">
-                            Hello! I'm your AI teaching assistant. How can I help you today? Select a category above to get started.
-                        </div>
-                        <div class="message-time">Just now</div>
-                    </div>
+        <!-- ============================================
+             CHAT BODY - Scrollable message area
+             ============================================ -->
+        <main class="chat-body" id="chatBody">
+            <!-- Welcome State (shown when empty) -->
+            <div class="welcome-state" id="welcomeState">
+                <span class="material-icons welcome-icon">auto_awesome</span>
+                <h2 class="welcome-title">What would you like to create?</h2>
+                <p class="welcome-subtitle">
+                    Describe your lesson content and I'll generate slides for you.
+                </p>
+            </div>
+
+            <!-- Messages will be dynamically inserted here -->
+        </main>
+
+        <!-- ============================================
+             INPUT FOOTER
+             ============================================ -->
+        <footer class="input-footer">
+            <!-- Type Selection -->
+            <div class="type-selector" id="typeSelector">
+                <div class="type-options" id="typeOptions">
+                    <button class="type-option selected" data-type="vocabulary" data-placeholder="e.g., '10 words about food and cooking'">
+                        <span class="material-icons">translate</span>
+                        <span>Vocabulary</span>
+                    </button>
+                    <button class="type-option" data-type="grammar" data-placeholder="e.g., 'Explain present perfect tense'">
+                        <span class="material-icons">spellcheck</span>
+                        <span>Grammar</span>
+                    </button>
+                    <button class="type-option" data-type="quiz" data-placeholder="e.g., '10 questions about articles'">
+                        <span class="material-icons">quiz</span>
+                        <span>Quiz</span>
+                    </button>
+                    <button class="type-option" data-type="homework" data-placeholder="e.g., '5 fill-in-the-blank tasks'">
+                        <span class="material-icons">assignment</span>
+                        <span>Homework</span>
+                    </button>
                 </div>
-
-                <!-- Sample User Message -->
-                <div class="message user-message">
-                    <div class="message-content">
-                        <div class="message-text">
-                            Can you help me create a vocabulary list about food?
-                        </div>
-                        <div class="message-time">Just now</div>
-                    </div>
-                    <div class="message-avatar">
-                        <span class="material-icons">person</span>
-                    </div>
-                </div>
-
-                <!-- Sample AI Response -->
-                <div class="message ai-message">
-                    <div class="message-avatar">
-                        <span class="material-icons">smart_toy</span>
-                    </div>
-                    <div class="message-content">
-                        <div class="message-text">
-                            Of course! I'd be happy to help you create a vocabulary list about food. What level are your students? And would you like me to include example sentences and images?
-                        </div>
-                        <div class="message-time">Just now</div>
-                    </div>
+                <div class="type-error hidden" id="typeError">
+                    <span class="material-icons">error_outline</span>
+                    <span>Please select a content type before sending</span>
                 </div>
             </div>
 
-            <!-- Footer: Input Area -->
-            <div id="footer" class="chat-footer">
-                <div class="input-container">
-                    <button class="resource-button" title="Include resources">
-                        <span class="material-icons">add_circle</span>
+            <div class="input-container" id="inputContainer">
+                <div class="edit-badge hidden" id="editBadge">
+                    <span class="material-icons" style="font-size: 14px;">edit</span>
+                    <span>Editing slide <span id="editBadgeSlideNum"></span></span>
+                    <button class="edit-badge-cancel" id="editBadgeCancelBtn">&times;</button>
+                </div>
+                <textarea
+                    id="messageInput"
+                    placeholder="Type your request..."
+                    rows="2"
+                ></textarea>
+            </div>
+
+            <div class="input-context">
+                <span>AI-generated content may need review</span>
+            </div>
+        </footer>
+
+        <!-- ============================================
+             MESSAGE TEMPLATES (hidden, used by JS)
+             ============================================ -->
+        <template id="userMessageTemplate">
+            <div class="message-user fade-in"></div>
+        </template>
+
+        <template id="aiMessageTemplate">
+            <div class="message-ai fade-in"></div>
+        </template>
+
+        <template id="progressMessageTemplate">
+            <div class="message-progress fade-in">
+                <div class="progress-spinner"></div>
+                <span class="progress-status">Processing...</span>
+                <button class="progress-cancel-btn" title="Cancel">&#x2715;</button>
+            </div>
+        </template>
+
+        <template id="previewContainerTemplate">
+            <div class="preview-container fade-in">
+                <div class="preview-header">
+                    <span class="preview-title">
+                        <span class="material-icons" style="font-size: 16px;">description</span>
+                        <span class="preview-title-text">Preview</span>
+                    </span>
+                    <span class="preview-count"></span>
+                    <button class="progress-cancel-btn" id="previewCancelBtn" title="Cancel">&#x2715;</button>
+                </div>
+                <div class="slide-preview-single">
+                    <div class="slide-counter">
+                        <span class="slide-counter-text">Slide 1 of 1</span>
+                        <span class="slide-type-badge"></span>
+                    </div>
+                    <div class="slide-card">
+                        <div class="slide-card-title"></div>
+                        <div class="slide-card-subtitle"></div>
+                        <div class="slide-card-content"></div>
+                        <div class="slide-card-example hidden"></div>
+                    </div>
+                </div>
+                <div class="preview-navigation">
+                    <button class="nav-btn" id="navBackBtn" disabled>
+                        <span class="material-icons" style="font-size: 16px;">arrow_back</span>
+                        <span class="nav-shortcut">Bksp</span>
                     </button>
-                    <input
-                        type="text"
-                        class="message-input"
-                        placeholder="Type your message..."
-                        aria-label="Message input"
-                    />
-                    <button class="send-button" title="Send message">
-                        <span class="material-icons">send</span>
+                    <button class="nav-btn" id="navSkipBtn">
+                        <span class="material-icons" style="font-size: 16px;">delete_outline</span>
+                        <span class="nav-shortcut">R</span>
+                    </button>
+                    <button class="nav-btn" id="navEditBtn">
+                        <span class="material-icons" style="font-size: 16px;">edit</span>
+                        <span class="nav-shortcut">E</span>
+                    </button>
+                    <button class="nav-btn nav-btn-primary" id="navNextBtn">
+                        <span class="material-icons" style="font-size: 16px;">arrow_forward</span>
+                        <span class="nav-shortcut">Enter</span>
                     </button>
                 </div>
             </div>
-        </div>
+        </template>
+
+        <template id="successMessageTemplate">
+            <div class="message-success fade-in">
+                <span class="material-icons">check_circle</span>
+                <span class="success-text"></span>
+            </div>
+        </template>
+
+        <template id="errorMessageTemplate">
+            <div class="message-error fade-in">
+                <span class="material-icons">error</span>
+                <span class="error-text"></span>
+            </div>
+        </template>
 
         <!-- Settings Modal -->
-        <div class="modal-overlay" id="settingsModal" style="display: none;">
+        <div class="modal-overlay hidden" id="settingsModal">
             <div class="modal-content">
                 <div class="modal-header">
                     <h3>Class Settings</h3>
@@ -190,23 +214,15 @@
                     </div>
 
                     <div class="settings-group">
-                        <label for="settingsClassName">Class Name</label>
-                        <input type="text" id="settingsClassName" placeholder="e.g., Class 7A" value="Class 7A">
-                    </div>
-
-                    <div class="settings-group">
-                        <label for="settingsNativeLanguage">Native Language (Optional)</label>
+                        <label for="settingsNativeLanguage">Use Students native language</label>
                         <select id="settingsNativeLanguage">
-                            <option value="">-- Not specified --</option>
+                            <option value="No" selected>No</option>
                             <option value="English">English</option>
                             <option value="German">German</option>
                             <option value="French">French</option>
                             <option value="Spanish">Spanish</option>
                             <option value="Italian">Italian</option>
                             <option value="Portuguese">Portuguese</option>
-                            <option value="Chinese">Chinese</option>
-                            <option value="Arabic">Arabic</option>
-                            <option value="Russian">Russian</option>
                         </select>
                     </div>
 
@@ -216,11 +232,12 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button class="button button-secondary" id="cancelSettingsBtn">Cancel</button>
-                    <button class="button button-primary" id="saveSettingsBtn">Save</button>
+                    <button class="btn btn-secondary" id="cancelSettingsBtn">Cancel</button>
+                    <button class="btn btn-primary" id="saveSettingsBtn">Save</button>
                 </div>
             </div>
         </div>
+
     </div>
 </body>
 </html>

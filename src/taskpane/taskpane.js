@@ -1,1084 +1,1257 @@
-/* global document, Office, PowerPoint */
+/* global Office, PowerPoint */
 
-// ============================================================================
-// WEBSOCKET CONNECTION CONFIGURATION
-// ============================================================================
+/**
+ * Teacher Assistant Taskpane - Full chat/preview UI with direct PowerPoint API access.
+ * Ported from dialog.js to run in the taskpane sidebar (~350px).
+ * No parent-child messaging needed — calls PowerPoint.run() directly.
+ */
 
-// URL injected by webpack based on environment (dev/prod)
-const WS_BACKEND_URL = process.env.WS_URL;
-const USER_ID = 123; // HARDCODED for Phase 1
-const CHANNEL_NAME = "powerpoint-session-001"; // HARDCODED for Phase 1
-const MAX_RECONNECT_ATTEMPTS = 5;
+// Import CSS for webpack bundling
+import './taskpane.css';
 
-let wsConnection = null;
-let wsConnectionState = 'disconnected'; // 'disconnected' | 'connecting' | 'connected'
-let reconnectAttempts = 0;
+// ============================================
+// WEBSOCKET CONFIGURATION
+// ============================================
 
-// ============================================================================
-// APPLICATION STATE
-// ============================================================================
+const WS_URL = process.env.WS_URL;
+const USER_ID = 'user-123';  // TODO: implement proper user management
+const CHANNEL_NAME = 'powerpoint-taskpane';
+const MAX_RECONNECT_ATTEMPTS = 3;
 
-// Current selected category
-let currentCategory = 'vocabulary';
+// ============================================
+// STATE MANAGEMENT
+// ============================================
 
-// Class context settings
-let classContext = {
-  language: 'English',
-  level: 'B1',
-  className: 'Class 7A',
-  nativeLanguage: '',
-  ageGroup: ''
+const state = {
+    // Chat state
+    messages: [],
+    isProcessing: false,
+    pendingRequest: null,
+
+    // Preview state
+    slides: [],
+    currentSlideIndex: 0,
+    isInPreviewMode: false,
+
+    // Edit mode state
+    originalRequest: null,
+    editingSlideIndex: null,
+    isEditMode: false,
+
+    // Progress state
+    progressElement: null,
+    cancelled: false,
+    staleResponses: 0,
+
+    // Deduplication
+    lastMessageId: null,
+
+    // Type selection
+    selectedType: 'vocabulary',
+
+    // Settings
+    settingsConfirmed: false,
+    settings: {
+        language: 'English',
+        level: 'B1',
+        nativeLanguage: 'No',
+        ageGroup: ''
+    },
+
+    // Current file path (for per-file settings)
+    currentFilePath: null,
+
+    // WebSocket state
+    ws: null,
+    wsState: 'disconnected',
+    reconnectAttempts: 0,
+    conversationId: null,
+
+    // Preview element reference
+    previewElement: null,
+
+    // UI elements (cached after init)
+    elements: {}
 };
 
-// Dialog reference
-let dialog = null;
+// ============================================
+// INITIALIZATION
+// ============================================
 
 Office.onReady((info) => {
-  if (info.host === Office.HostType.PowerPoint) {
-    document.getElementById("sideload-msg").style.display = "none";
-    document.getElementById("app-body").style.display = "block";
-
-    // Initialize launcher view
-    initializeLauncher();
-
-    // Keep original initialization for chat view (if we switch to it)
-    loadSettings();
-    initializeUI();
-    updateContextDisplay();
-    // Don't auto-connect WebSocket - will connect when dialog opens
-    // connectWebSocket();
-  }
+    if (info.host === Office.HostType.PowerPoint) {
+        document.getElementById('sideload-msg').style.display = 'none';
+        document.getElementById('app-body').style.display = 'flex';
+        initializeTaskpane();
+    }
 });
 
-// ============================================================================
-// DIALOG MANAGEMENT
-// ============================================================================
-
-function initializeLauncher() {
-  const openDialogBtn = document.getElementById('openDialogBtn');
-  if (openDialogBtn) {
-    openDialogBtn.addEventListener('click', openDialog);
-  }
-  updateLauncherStatus('Ready to launch', 'info');
-}
-
-function openDialog() {
-  updateLauncherStatus('Opening dialog...', 'info');
-
-  // Get the dialog URL (same origin as the add-in)
-  const dialogUrl = window.location.origin + '/dialog.html';
-
-  console.log('Opening dialog at:', dialogUrl);
-
-  Office.context.ui.displayDialogAsync(
-    dialogUrl,
-    {
-      height: 70,  // 70% of screen height
-      width: 60,   // 60% of screen width
-      displayInIframe: false  // Open in separate window
-    },
-    (result) => {
-      if (result.status === Office.AsyncResultStatus.Failed) {
-        console.error('Failed to open dialog:', result.error.message);
-        updateLauncherStatus('Failed to open: ' + result.error.message, 'error');
-        return;
-      }
-
-      dialog = result.value;
-      updateLauncherStatus('Dialog opened', 'success');
-
-      // Handle messages from the dialog
-      dialog.addEventHandler(Office.EventType.DialogMessageReceived, handleDialogMessage);
-
-      // Handle dialog closed
-      dialog.addEventHandler(Office.EventType.DialogEventReceived, handleDialogEvent);
-    }
-  );
-}
-
-function handleDialogMessage(arg) {
-  console.log('Message from dialog:', arg.message);
-
-  try {
-    const message = JSON.parse(arg.message);
-
-    switch (message.type) {
-      case 'close':
-        console.log('Dialog requested close');
-        if (dialog) {
-          dialog.close();
-          dialog = null;
-        }
-        updateLauncherStatus('Dialog closed', 'info');
-        break;
-
-      case 'generate':
-        console.log('Generate request:', message.content);
-        updateLauncherStatus('Processing: ' + message.content.substring(0, 30) + '...', 'info');
-        // Here we would normally call the WebSocket and insert slides
-        // For now, just log it
-        handleGenerateRequest(message);
-        break;
-
-      default:
-        console.log('Unknown message type:', message.type);
-    }
-  } catch (error) {
-    console.error('Failed to parse dialog message:', error);
-  }
-}
-
-function handleDialogEvent(arg) {
-  console.log('Dialog event:', arg);
-
-  switch (arg.error) {
-    case 12002: // Dialog closed by user clicking X
-      console.log('Dialog closed by user');
-      dialog = null;
-      updateLauncherStatus('Dialog closed', 'info');
-      break;
-
-    case 12003: // Dialog navigated to different domain
-      console.log('Dialog navigation error');
-      updateLauncherStatus('Navigation error', 'error');
-      break;
-
-    case 12006: // Dialog closed programmatically
-      console.log('Dialog closed programmatically');
-      dialog = null;
-      updateLauncherStatus('Ready', 'info');
-      break;
-
-    default:
-      console.log('Unknown dialog event:', arg.error);
-      updateLauncherStatus('Dialog event: ' + arg.error, 'info');
-  }
-}
-
-function handleGenerateRequest(message) {
-  // This is where we would:
-  // 1. Send to WebSocket backend
-  // 2. Get response
-  // 3. Show preview in dialog (send message back)
-  // 4. On user confirmation, insert slides
-
-  // For now, just demonstrate with a test slide
-  console.log('Would generate content for:', message.content);
-  updateLauncherStatus('Received: ' + message.content.substring(0, 40), 'success');
-
-  // TODO: Connect to WebSocket and handle response
-  // For demo, we'll just insert a test slide
-  insertTestSlide(message.content);
-}
-
-async function insertTestSlide(userMessage) {
-  try {
-    await PowerPoint.run(async (context) => {
-      const presentation = context.presentation;
-
-      presentation.slides.load('items');
-      await context.sync();
-
-      presentation.slides.add();
-      await context.sync();
-
-      presentation.slides.load('items');
-      await context.sync();
-
-      const slide = presentation.slides.items[presentation.slides.items.length - 1];
-
-      slide.load('shapes');
-      await context.sync();
-
-      // Delete default shapes
-      const shapesToDelete = slide.shapes.items.slice();
-      for (let shape of shapesToDelete) {
-        shape.delete();
-      }
-      await context.sync();
-
-      // Add title
-      const titleShape = slide.shapes.addTextBox('Dialog Test');
-      titleShape.left = 50;
-      titleShape.top = 50;
-      titleShape.width = 600;
-      titleShape.height = 60;
-      await context.sync();
-
-      titleShape.textFrame.textRange.font.bold = true;
-      titleShape.textFrame.textRange.font.size = 32;
-      titleShape.textFrame.textRange.font.color = '#d13438';
-      await context.sync();
-
-      // Add user message
-      const contentShape = slide.shapes.addTextBox('User requested: ' + userMessage);
-      contentShape.left = 50;
-      contentShape.top = 130;
-      contentShape.width = 600;
-      contentShape.height = 200;
-      await context.sync();
-
-      contentShape.textFrame.textRange.font.size = 18;
-      await context.sync();
-
-      console.log('Test slide created');
-      updateLauncherStatus('Slide created!', 'success');
-    });
-  } catch (error) {
-    console.error('Error creating slide:', error);
-    updateLauncherStatus('Error: ' + error.message, 'error');
-  }
-}
-
-function updateLauncherStatus(text, type = 'info') {
-  const statusEl = document.getElementById('launcherStatus');
-  const textEl = document.getElementById('statusText');
-
-  if (textEl) {
-    textEl.textContent = text;
-  }
-
-  if (statusEl) {
-    statusEl.classList.remove('success', 'error');
-    if (type === 'success') {
-      statusEl.classList.add('success');
-    } else if (type === 'error') {
-      statusEl.classList.add('error');
-    }
-  }
-}
-
-// ============================================================================
-// WEBSOCKET CONNECTION MANAGEMENT
-// ============================================================================
-
-function connectWebSocket() {
-  if (wsConnectionState === 'connecting' || wsConnectionState === 'connected') {
-    console.log('WebSocket already connecting or connected');
-    return;
-  }
-
-  console.log(`Connecting to WebSocket at ${WS_BACKEND_URL}...`);
-  wsConnectionState = 'connecting';
-  updateConnectionStatus();
-
-  try {
-    wsConnection = new WebSocket(WS_BACKEND_URL);
-
-    wsConnection.onopen = function(event) {
-      console.log('WebSocket connected successfully');
-      wsConnectionState = 'connected';
-      reconnectAttempts = 0;
-      updateConnectionStatus();
-      addMessage('Connected to server', 'ai');
+function initializeTaskpane() {
+    // Cache DOM elements
+    state.elements = {
+        chatBody: document.getElementById('chatBody'),
+        welcomeState: document.getElementById('welcomeState'),
+        messageInput: document.getElementById('messageInput'),
+        inputContainer: document.getElementById('inputContainer'),
+        newChatBtn: document.getElementById('newChatBtn'),
+        contextBadge: document.getElementById('contextBadge'),
+        typeSelector: document.getElementById('typeSelector'),
+        typeOptions: document.getElementById('typeOptions'),
+        typeError: document.getElementById('typeError'),
+        editBadge: document.getElementById('editBadge'),
+        editBadgeSlideNum: document.getElementById('editBadgeSlideNum'),
+        editBadgeCancelBtn: document.getElementById('editBadgeCancelBtn'),
+        settingsModal: document.getElementById('settingsModal'),
+        closeModalBtn: document.getElementById('closeModalBtn'),
+        cancelSettingsBtn: document.getElementById('cancelSettingsBtn'),
+        saveSettingsBtn: document.getElementById('saveSettingsBtn'),
+        settingsLanguage: document.getElementById('settingsLanguage'),
+        settingsLevel: document.getElementById('settingsLevel'),
+        settingsNativeLanguage: document.getElementById('settingsNativeLanguage'),
+        settingsAgeGroup: document.getElementById('settingsAgeGroup')
     };
 
-    wsConnection.onmessage = handleWebSocketMessage;
-    wsConnection.onerror = handleWebSocketError;
-    wsConnection.onclose = handleWebSocketClose;
+    loadSettings();
+    setupEventListeners();
 
-  } catch (error) {
-    console.error('Failed to create WebSocket connection:', error);
-    wsConnectionState = 'disconnected';
-    updateConnectionStatus();
-    addMessage('Failed to connect to server', 'ai');
-  }
+    // Set initial placeholder for default type
+    const defaultTypeBtn = state.elements.typeOptions.querySelector('.type-option.selected');
+    if (defaultTypeBtn && defaultTypeBtn.dataset.placeholder) {
+        state.elements.messageInput.placeholder = defaultTypeBtn.dataset.placeholder;
+    }
+
+    // Connect to WebSocket backend
+    setTimeout(() => {
+        connectWebSocket();
+    }, 500);
+
+    console.log('Taskpane initialized');
+}
+
+function setupEventListeners() {
+    const { messageInput, newChatBtn, typeOptions } = state.elements;
+
+    // Block input focus until settings are confirmed
+    messageInput.addEventListener('focus', () => {
+        if (!state.settingsConfirmed) {
+            messageInput.blur();
+            openSettingsModal();
+        }
+    });
+
+    // Auto-resize textarea
+    messageInput.addEventListener('input', () => {
+        messageInput.style.height = 'auto';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 100) + 'px';
+        clearTypeValidationError();
+    });
+
+    // Type selection
+    typeOptions.addEventListener('click', (e) => {
+        const btn = e.target.closest('.type-option');
+        if (btn) selectType(btn);
+    });
+
+    // Header buttons
+    newChatBtn.addEventListener('click', handleNewChat);
+
+    // Edit badge cancel
+    const { editBadgeCancelBtn } = state.elements;
+    if (editBadgeCancelBtn) {
+        editBadgeCancelBtn.addEventListener('click', exitEditMode);
+    }
+
+    // Context badge opens settings
+    const { contextBadge } = state.elements;
+    if (contextBadge) {
+        contextBadge.addEventListener('click', openSettingsModal);
+    }
+
+    // Settings modal
+    const { closeModalBtn, cancelSettingsBtn, saveSettingsBtn, settingsModal } = state.elements;
+    closeModalBtn.addEventListener('click', closeSettingsModal);
+    cancelSettingsBtn.addEventListener('click', closeSettingsModal);
+    saveSettingsBtn.addEventListener('click', saveSettings);
+    settingsModal.addEventListener('click', (e) => {
+        if (e.target === settingsModal) closeSettingsModal();
+    });
+
+    // Global keyboard shortcuts
+    document.addEventListener('keydown', handleGlobalKeydown);
+}
+
+// ============================================
+// TYPE SELECTION
+// ============================================
+
+function selectType(btn) {
+    const { typeOptions, messageInput } = state.elements;
+    const type = btn.dataset.type;
+    const placeholder = btn.dataset.placeholder || 'Type your request...';
+
+    typeOptions.querySelectorAll('.type-option').forEach(opt => opt.classList.remove('selected'));
+    btn.classList.add('selected');
+    state.selectedType = type;
+    messageInput.placeholder = placeholder;
+    clearTypeValidationError();
+    messageInput.focus();
+}
+
+function resetTypeSelection() {
+    const { typeOptions, messageInput } = state.elements;
+    typeOptions.querySelectorAll('.type-option').forEach(opt => opt.classList.remove('selected'));
+    const defaultBtn = typeOptions.querySelector('[data-type="vocabulary"]');
+    if (defaultBtn) {
+        defaultBtn.classList.add('selected');
+        state.selectedType = 'vocabulary';
+        messageInput.placeholder = defaultBtn.dataset.placeholder || 'Type your request...';
+    }
+    clearTypeValidationError();
+}
+
+function showTypeValidationError() {
+    const { typeError, inputContainer } = state.elements;
+    typeError.classList.remove('hidden');
+    inputContainer.classList.add('validation-error');
+}
+
+function clearTypeValidationError() {
+    const { typeError, inputContainer } = state.elements;
+    typeError.classList.add('hidden');
+    inputContainer.classList.remove('validation-error');
+}
+
+function validateTypeSelection() {
+    if (!state.selectedType) {
+        showTypeValidationError();
+        return false;
+    }
+    return true;
+}
+
+// ============================================
+// MESSAGE HANDLING
+// ============================================
+
+function handleSend() {
+    if (!state.settingsConfirmed) {
+        openSettingsModal();
+        return;
+    }
+
+    const { messageInput } = state.elements;
+    const content = messageInput.value.trim();
+    if (!content || state.isProcessing) return;
+
+    // Edit mode
+    if (state.isEditMode && state.editingSlideIndex !== null) {
+        handleEditSend(content);
+        return;
+    }
+
+    if (!validateTypeSelection()) return;
+
+    // Dismiss existing preview
+    if (state.isInPreviewMode && state.slides.length > 0) {
+        const count = state.slides.length;
+        dismissPreview(`${count} slide${count !== 1 ? 's' : ''} not inserted`);
+    }
+
+    state.lastMessageId = null;
+    state.cancelled = false;
+    state.elements.welcomeState.classList.add('hidden');
+
+    addUserMessage(content);
+    messageInput.value = '';
+    messageInput.style.height = 'auto';
+
+    setProcessing(true);
+    showProgressInPreviewArea('Generating content...');
+    state.originalRequest = content;
+
+    const sent = sendWebSocketMessage({
+        type: state.selectedType,
+        content: content
+    });
+
+    if (!sent) connectWebSocket();
+}
+
+function handleEditSend(editInstruction) {
+    const { messageInput } = state.elements;
+    const slideIndex = state.editingSlideIndex;
+    const currentSlide = state.slides[slideIndex];
+
+    // Show user message before preview
+    const messageContent = `Edit slide ${slideIndex + 1}: ${editInstruction}`;
+    const template = document.getElementById('userMessageTemplate');
+    const clone = template.content.cloneNode(true);
+    const messageEl = clone.querySelector('.message-user');
+    messageEl.textContent = messageContent;
+    insertBeforePreview(messageEl);
+    state.messages.push({ type: 'user', content: messageContent });
+
+    messageInput.value = '';
+    messageInput.style.height = 'auto';
+
+    setProcessing(true);
+    showProgressInPreviewArea('Updating slide...');
+
+    const sent = sendWebSocketMessage({
+        type: 'edit',
+        content: editInstruction,
+        edit: {
+            slideIndex: slideIndex,
+            currentSlide: currentSlide,
+            originalRequest: state.originalRequest,
+            originalType: state.selectedType
+        }
+    });
+
+    if (!sent) connectWebSocket();
+}
+
+function handleNewChat() {
+    state.messages = [];
+    state.pendingRequest = null;
+    state.currentSlideIndex = 0;
+    setProcessing(false);
+    state.conversationId = null;
+    state.originalRequest = null;
+    state.editingSlideIndex = null;
+    state.isEditMode = false;
+
+    resetTypeSelection();
+    hidePreviewArea();
+
+    const { chatBody, welcomeState } = state.elements;
+    chatBody.innerHTML = '';
+    chatBody.appendChild(welcomeState);
+    welcomeState.classList.remove('hidden');
+}
+
+// ============================================
+// WEBSOCKET CONNECTION
+// ============================================
+
+function connectWebSocket() {
+    if (state.ws && state.wsState === 'connected') return;
+    if (!WS_URL) {
+        console.warn('WebSocket URL not configured');
+        state.wsState = 'disconnected';
+        return;
+    }
+
+    state.wsState = 'connecting';
+    console.log('Connecting to WebSocket:', WS_URL);
+
+    try {
+        state.ws = new WebSocket(WS_URL);
+    } catch (error) {
+        console.error('Failed to create WebSocket:', error);
+        state.wsState = 'disconnected';
+        return;
+    }
+
+    state.ws.onopen = () => {
+        console.log('WebSocket connected');
+        state.wsState = 'connected';
+        state.reconnectAttempts = 0;
+    };
+
+    state.ws.onmessage = (event) => {
+        try {
+            handleWebSocketMessage(event.data);
+        } catch (error) {
+            console.error('Error handling WebSocket message:', error);
+        }
+    };
+
+    state.ws.onclose = (event) => {
+        console.log('WebSocket closed:', event.code, event.reason);
+        state.wsState = 'disconnected';
+        state.ws = null;
+
+        if (event.code !== 1000 && state.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            state.reconnectAttempts++;
+            setTimeout(connectWebSocket, 2000 * state.reconnectAttempts);
+        }
+    };
+
+    state.ws.onerror = (error) => {
+        console.warn('WebSocket error:', error);
+    };
 }
 
 function disconnectWebSocket() {
-  if (wsConnection) {
-    console.log('Disconnecting WebSocket...');
-    wsConnection.close();
-    wsConnection = null;
-    wsConnectionState = 'disconnected';
-    updateConnectionStatus();
-  }
+    if (state.ws) {
+        state.ws.close(1000, 'User closed');
+        state.ws = null;
+        state.wsState = 'disconnected';
+    }
 }
 
-function handleWebSocketMessage(event) {
-  console.log('Received WebSocket message:', event.data);
+function sendWebSocketMessage(message) {
+    if (!state.ws || state.wsState !== 'connected') {
+        showError('Not connected to server. Make sure the backend is running.');
+        setProcessing(false);
+        return false;
+    }
 
-  try {
-    const response = JSON.parse(event.data);
-    console.log('Parsed response:', response);
-
-    // Remove loading indicator
-    removeLoadingMessage();
-
-    // Display in chat
-    displayResponseInChat(response);
-
-    // Insert into slide
-    insertResponseIntoSlide(response);
-
-  } catch (error) {
-    console.error('Failed to parse WebSocket message:', error);
-    removeLoadingMessage();
-    addMessage('Error: Failed to process response', 'ai');
-  }
-}
-
-function handleWebSocketError(error) {
-  console.error('WebSocket error:', error);
-  addMessage('Connection error occurred', 'ai');
-}
-
-function handleWebSocketClose(event) {
-  console.log('WebSocket closed:', event.code, event.reason);
-  wsConnectionState = 'disconnected';
-  updateConnectionStatus();
-
-  // Attempt to reconnect if not a clean close
-  if (event.code !== 1000 && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-    reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-    console.log(`Attempting to reconnect in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-
-    setTimeout(() => {
-      addMessage(`Reconnecting... (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`, 'ai');
-      connectWebSocket();
-    }, delay);
-  } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    addMessage('Connection lost. Please refresh the page to reconnect.', 'ai');
-  }
-}
-
-function sendWebSocketMessage(payload) {
-  if (wsConnectionState !== 'connected') {
-    console.error('Cannot send message: WebSocket not connected');
-    addMessage('Error: Not connected to server. Please wait...', 'ai');
-    return false;
-  }
-
-  try {
-    const jsonString = JSON.stringify(payload);
-    console.log('Sending WebSocket message:', jsonString);
-    wsConnection.send(jsonString);
-    return true;
-  } catch (error) {
-    console.error('Failed to send WebSocket message:', error);
-    addMessage('Error: Failed to send message', 'ai');
-    return false;
-  }
-}
-
-function updateConnectionStatus() {
-  // This will be implemented when we add the UI status indicator
-  console.log(`Connection status: ${wsConnectionState}`);
-
-  // For now, just update a class on the body element
-  const body = document.body;
-  if (body) {
-    body.classList.remove('ws-disconnected', 'ws-connecting', 'ws-connected');
-    body.classList.add(`ws-${wsConnectionState}`);
-  }
-}
-
-function displayResponseInChat(response) {
-  // Check if this is an error response
-  if (response.error) {
-    addMessage(`Error: ${response.error}`, 'ai');
-    return;
-  }
-
-  // Check if this is a vocabulary response
-  if (response.title && response.words && Array.isArray(response.words)) {
-    displayVocabularyResponse(response);
-    return;
-  }
-
-  // Generic response display
-  addMessage(JSON.stringify(response, null, 2), 'ai');
-}
-
-function displayVocabularyResponse(response) {
-  let chatMessage = `${response.title}\n${response.subtitle}\n\n`;
-
-  response.words.forEach((word, index) => {
-    chatMessage += `${index + 1}. ${word.word} - ${word.translation}\n`;
-    chatMessage += `   ${word.definition}\n\n`;
-  });
-
-  addMessage(chatMessage, 'ai');
-}
-
-function addLoadingMessage() {
-  const chatBody = document.getElementById('body');
-
-  const messageDiv = document.createElement('div');
-  messageDiv.className = 'message ai-message loading-message';
-
-  const avatarDiv = document.createElement('div');
-  avatarDiv.className = 'message-avatar';
-  avatarDiv.innerHTML = '<span class="material-icons">psychology</span>';
-
-  const contentDiv = document.createElement('div');
-  contentDiv.className = 'message-content';
-
-  const textDiv = document.createElement('div');
-  textDiv.className = 'message-text';
-  textDiv.textContent = 'Generating content...';
-
-  contentDiv.appendChild(textDiv);
-  messageDiv.appendChild(avatarDiv);
-  messageDiv.appendChild(contentDiv);
-
-  chatBody.appendChild(messageDiv);
-  chatBody.scrollTop = chatBody.scrollHeight;
-}
-
-function removeLoadingMessage() {
-  const loadingMsg = document.querySelector('.loading-message');
-  if (loadingMsg) {
-    loadingMsg.remove();
-  }
-}
-
-// ============================================================================
-// POWERPOINT SLIDE INSERTION
-// ============================================================================
-
-function insertResponseIntoSlide(response) {
-  // Don't insert error messages into slides
-  if (response.error) {
-    console.log('Error response, not inserting into slide');
-    return;
-  }
-
-  // Check if this is a vocabulary response
-  if (response.title && response.words && Array.isArray(response.words)) {
-    insertVocabularyIntoSlide(response);
-    return;
-  }
-
-  // For other content types, use generic insertion
-  insertGenericContentIntoSlide(response);
-}
-
-async function insertVocabularyIntoSlide(response) {
-  try {
-    console.log('Inserting vocabulary into slide...', response);
-
-    await PowerPoint.run(async (context) => {
-      const presentation = context.presentation;
-
-      // Load slides and add new one
-      presentation.slides.load('items');
-      await context.sync();
-
-      // slides.add() returns void, not a slide object!
-      presentation.slides.add();
-      await context.sync();
-
-      // Reload to get the new slide
-      presentation.slides.load('items');
-      await context.sync();
-
-      // Get the last slide (the one we just added)
-      const slide = presentation.slides.items[presentation.slides.items.length - 1];
-
-      // Load shapes collection
-      slide.load('shapes');
-      await context.sync();
-
-      // Delete default placeholder shapes ("Click to add title", etc.)
-      const shapesToDelete = slide.shapes.items.slice();
-      for (let shape of shapesToDelete) {
-        shape.delete();
-      }
-      await context.sync();
-
-      // Title text box
-      const titleShape = slide.shapes.addTextBox(response.title || 'Vocabulary');
-      titleShape.left = 50;
-      titleShape.top = 30;
-      titleShape.width = 600;
-      titleShape.height = 60;
-      await context.sync();
-
-      titleShape.textFrame.textRange.font.bold = true;
-      titleShape.textFrame.textRange.font.size = 32;
-      titleShape.textFrame.textRange.font.color = '#2c3e50';
-      await context.sync();
-
-      // Subtitle text box
-      if (response.subtitle) {
-        const subtitleShape = slide.shapes.addTextBox(response.subtitle);
-        subtitleShape.left = 50;
-        subtitleShape.top = 95;
-        subtitleShape.width = 600;
-        subtitleShape.height = 30;
-        await context.sync();
-
-        subtitleShape.textFrame.textRange.font.size = 16;
-        subtitleShape.textFrame.textRange.font.color = '#7f8c8d';
-        await context.sync();
-      }
-
-      // Add vocabulary words
-      let yPosition = 140;
-      const lineHeight = 70;
-
-      for (let index = 0; index < response.words.length; index++) {
-        const word = response.words[index];
-
-        // Word and translation
-        const wordText = `${index + 1}. ${word.word} — ${word.translation}`;
-        const wordShape = slide.shapes.addTextBox(wordText);
-        wordShape.left = 50;
-        wordShape.top = yPosition;
-        wordShape.width = 600;
-        wordShape.height = 30;
-        await context.sync();
-
-        wordShape.textFrame.textRange.font.size = 18;
-        wordShape.textFrame.textRange.font.bold = true;
-        wordShape.textFrame.textRange.font.color = '#34495e';
-        await context.sync();
-
-        // Definition
-        if (word.definition) {
-          const defShape = slide.shapes.addTextBox(word.definition);
-          defShape.left = 70;
-          defShape.top = yPosition + 30;
-          defShape.width = 580;
-          defShape.height = 35;
-          await context.sync();
-
-          defShape.textFrame.textRange.font.size = 14;
-          defShape.textFrame.textRange.font.color = '#5d6d7e';
-          await context.sync();
+    try {
+        if (!state.conversationId) {
+            state.conversationId = `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         }
 
-        yPosition += lineHeight;
-      }
+        const wsMessage = {
+            'user-id': USER_ID,
+            'channel-name': CHANNEL_NAME,
+            'conversation-id': state.conversationId,
+            type: message.type,
+            content: message.content,
+            requirements: {
+                language: state.settings.language,
+                level: state.settings.level,
+                'native-language': state.settings.nativeLanguage || 'No',
+                'age-group': state.settings.ageGroup || null
+            },
+            ...(message.edit && { edit: message.edit })
+        };
 
-      await context.sync();
-      console.log('Vocabulary slide created successfully');
-      addMessage('✓ Content added to new slide', 'ai');
-    });
-
-  } catch (error) {
-    console.error('Error inserting vocabulary into slide:', error);
-    addMessage('Error: Could not insert content into slide. ' + error.message, 'ai');
-  }
+        state.ws.send(JSON.stringify(wsMessage));
+        return true;
+    } catch (error) {
+        console.error('Failed to send WebSocket message:', error);
+        showError('Failed to send message. Please try again.');
+        setProcessing(false);
+        return false;
+    }
 }
 
-async function insertGenericContentIntoSlide(response) {
-  try {
-    console.log('Inserting generic content into slide...', response);
+function handleWebSocketMessage(data) {
+    try {
+        const message = JSON.parse(data);
 
-    await PowerPoint.run(async (context) => {
-      const presentation = context.presentation;
+        // Ignore stale responses
+        if (state.staleResponses > 0) {
+            if (message.type !== 'progress') state.staleResponses--;
+            return;
+        }
 
-      // Load slides and add new one
-      presentation.slides.load('items');
-      await context.sync();
+        if (message['requirements-not-met']) {
+            hideProgress();
+            addAIMessage(message['requirements-not-met']);
+            setProcessing(false);
+            return;
+        }
 
-      // slides.add() returns void
-      presentation.slides.add();
-      await context.sync();
+        if (message.type === 'progress') {
+            updateProgressInPreviewArea(message.stage || message.message);
+            return;
+        }
 
-      // Reload to get the new slide
-      presentation.slides.load('items');
-      await context.sync();
+        // Edit response
+        if (message.type === 'edit' && message.edit) {
+            const slideIndex = message.edit.slideIndex;
+            const existingSlide = state.slides[slideIndex];
+            const transformedSlide = transformEditedSlide(message.edit.slide, state.selectedType, existingSlide);
 
-      // Get the last slide
-      const slide = presentation.slides.items[presentation.slides.items.length - 1];
+            if (transformedSlide && slideIndex >= 0 && slideIndex < state.slides.length) {
+                state.slides[slideIndex] = transformedSlide;
+                state.currentSlideIndex = slideIndex;
+                updateSlideDisplay();
+                hideProgress();
+                setProcessing(false);
+                addAIMessage('Slide updated.');
+                if (state.previewElement) {
+                    setTimeout(() => {
+                        state.previewElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        if (state.isEditMode) state.elements.messageInput.focus();
+                    }, 100);
+                }
+            } else {
+                showError('Failed to apply edit. Please try again.');
+                setProcessing(false);
+            }
+            return;
+        }
 
-      // Load shapes
-      slide.load('shapes');
-      await context.sync();
+        // Route by type
+        if (message.type) {
+            const slides = transformResponseByType(message);
+            if (slides && slides.length > 0) {
+                const titles = { vocabulary: 'Vocabulary', grammar: 'Grammar', quiz: 'Quiz', homework: 'Homework' };
+                showSlidePreview(slides, message.title || titles[message.type] || 'Generated Content');
+            } else {
+                showError(`No ${message.type} content generated. Please try a different request.`);
+                setProcessing(false);
+            }
+            return;
+        }
 
-      // Delete default placeholder shapes
-      const shapesToDelete = slide.shapes.items.slice();
-      for (let shape of shapesToDelete) {
-        shape.delete();
-      }
-      await context.sync();
+        // Legacy fallback
+        if (message.slides || message.data) {
+            const slides = transformBackendSlides(message.slides || message.data);
+            if (slides && slides.length > 0) {
+                showSlidePreview(slides, message.summary || 'Generated Slides');
+            } else {
+                showError('No slides generated. Please try a different request.');
+                setProcessing(false);
+            }
+            return;
+        }
 
-      // Title
-      const title = response.title || 'Generated Content';
-      const titleShape = slide.shapes.addTextBox(title);
-      titleShape.left = 50;
-      titleShape.top = 30;
-      titleShape.width = 600;
-      titleShape.height = 60;
-      await context.sync();
+        if (message.error || message.message) {
+            hideProgress();
+            if (message.error) showError(message.error);
+            else addAIMessage(message.message);
+            setProcessing(false);
+            return;
+        }
 
-      titleShape.textFrame.textRange.font.bold = true;
-      titleShape.textFrame.textRange.font.size = 28;
-      await context.sync();
-
-      // Content (as formatted JSON for now)
-      const contentText = JSON.stringify(response, null, 2);
-      const contentShape = slide.shapes.addTextBox(contentText);
-      contentShape.left = 50;
-      contentShape.top = 100;
-      contentShape.width = 600;
-      contentShape.height = 400;
-      await context.sync();
-
-      contentShape.textFrame.textRange.font.size = 12;
-      contentShape.textFrame.textRange.font.name = 'Courier New';
-      await context.sync();
-
-      console.log('Generic content slide created successfully');
-      addMessage('✓ Content added to new slide', 'ai');
-    });
-
-  } catch (error) {
-    console.error('Error inserting generic content into slide:', error);
-    addMessage('Error: Could not insert content into slide. ' + error.message, 'ai');
-  }
+        // Unknown
+        hideProgress();
+        setProcessing(false);
+    } catch (error) {
+        console.error('Failed to parse WebSocket message:', error);
+        hideProgress();
+        setProcessing(false);
+    }
 }
 
-// ============================================================================
-// UI INITIALIZATION
-// ============================================================================
+// ============================================
+// TRANSFORM FUNCTIONS
+// ============================================
 
-function initializeUI() {
-  // Initialize category chips
-  const chips = document.querySelectorAll('.chip');
-  chips.forEach(chip => {
-    chip.addEventListener('click', handleCategoryClick);
-  });
-
-  // Initialize send button
-  const sendButton = document.querySelector('.send-button');
-  if (sendButton) {
-    sendButton.addEventListener('click', handleSendMessage);
-  }
-
-  // Initialize input field (Enter key to send)
-  const messageInput = document.querySelector('.message-input');
-  if (messageInput) {
-    messageInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        handleSendMessage();
-      }
-    });
-  }
-
-  // Initialize resource button (placeholder for now)
-  const resourceButton = document.querySelector('.resource-button');
-  if (resourceButton) {
-    resourceButton.addEventListener('click', handleResourceClick);
-  }
-
-  // Initialize settings button
-  const settingsBtn = document.getElementById('settingsBtn');
-  if (settingsBtn) {
-    settingsBtn.addEventListener('click', openSettingsModal);
-  }
-
-  // Initialize modal close buttons
-  const closeModalBtn = document.getElementById('closeModalBtn');
-  const cancelSettingsBtn = document.getElementById('cancelSettingsBtn');
-  if (closeModalBtn) {
-    closeModalBtn.addEventListener('click', closeSettingsModal);
-  }
-  if (cancelSettingsBtn) {
-    cancelSettingsBtn.addEventListener('click', closeSettingsModal);
-  }
-
-  // Initialize save settings button
-  const saveSettingsBtn = document.getElementById('saveSettingsBtn');
-  if (saveSettingsBtn) {
-    saveSettingsBtn.addEventListener('click', saveSettings);
-  }
-
-  // Close modal when clicking outside
-  const modal = document.getElementById('settingsModal');
-  if (modal) {
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        closeSettingsModal();
-      }
-    });
-  }
-
-  console.log('Chat UI initialized successfully');
+function transformResponseByType(message) {
+    switch (message.type) {
+        case 'vocabulary': return transformVocabularyToSlides(message);
+        case 'grammar': return transformGrammarToSlides(message);
+        case 'quiz': return transformQuizToSlides(message);
+        case 'homework': return transformHomeworkToSlides(message);
+        default: return transformBackendSlides(message.slides || message.data || []);
+    }
 }
 
-function handleCategoryClick(event) {
-  // Get the chip that was clicked
-  const clickedChip = event.currentTarget;
-
-  // Remove active class from all chips
-  document.querySelectorAll('.chip').forEach(chip => {
-    chip.classList.remove('active');
-  });
-
-  // Add active class to clicked chip
-  clickedChip.classList.add('active');
-
-  // Update current category
-  currentCategory = clickedChip.dataset.category;
-
-  console.log(`Switched to category: ${currentCategory}`);
-
-  // Add system message to chat
-  addMessage(`Switched to ${currentCategory} mode. How can I help you?`, 'ai');
+function transformBackendSlides(backendSlides) {
+    if (!backendSlides || !Array.isArray(backendSlides)) return [];
+    return backendSlides.map(slide => ({
+        type: slide.type || 'Content',
+        title: slide.title || '',
+        subtitle: slide.subtitle || '',
+        content: slide.content || slide.body || '',
+        example: slide.example || slide['example-sentence'] || ''
+    }));
 }
 
-function handleSendMessage() {
-  const messageInput = document.querySelector('.message-input');
-  const messageText = messageInput.value.trim();
-
-  if (messageText === '') {
-    return;
-  }
-
-  // Add user message to chat
-  addMessage(messageText, 'user');
-
-  // Clear input
-  messageInput.value = '';
-
-  // Build WebSocket message payload
-  const messagePayload = {
-    "user-id": USER_ID,
-    "channel-name": CHANNEL_NAME,
-    "conversation-id": null, // null for new conversations (will track later)
-    "type": currentCategory, // vocabulary, grammar, reading, etc.
-    "content": messageText,
-    "requirements": {}
-  };
-
-  console.log('Sending message with payload:', messagePayload);
-
-  // Add loading indicator
-  addLoadingMessage();
-
-  // Send via WebSocket
-  const sent = sendWebSocketMessage(messagePayload);
-
-  // If send failed, remove loading indicator
-  if (!sent) {
-    removeLoadingMessage();
-  }
+// Single-item transforms
+function transformSingleVocabularySlide(wordData) {
+    return {
+        type: 'Vocabulary',
+        title: wordData.word || wordData.title || '',
+        subtitle: wordData.translation || wordData.subtitle || '',
+        content: wordData.definition || wordData.content || '',
+        example: wordData.example || ''
+    };
 }
 
-function handleResourceClick() {
-  // Placeholder for resource attachment
-  console.log('Resource button clicked - functionality to be implemented');
-  showStatus('Resource attachment feature coming soon!', true);
+function transformSingleGrammarSlide(slideData) {
+    let contentText = '';
+    if (typeof slideData.content === 'string') {
+        contentText = slideData.content;
+    } else if (typeof slideData.content === 'object' && slideData.content !== null) {
+        contentText = slideData.content.explanation || '';
+    }
+
+    let exampleText = '';
+    const examples = slideData.examples || (slideData.content && slideData.content.examples) || [];
+    if (Array.isArray(examples)) {
+        examples.forEach(ex => {
+            if (ex.sentence) {
+                exampleText += ex.sentence;
+                if (ex.translation) exampleText += ` → ${ex.translation}`;
+                exampleText += '\n';
+            }
+        });
+    }
+
+    return {
+        type: 'Grammar',
+        title: slideData['slide-title'] || slideData.slideTitle || slideData.title || 'Grammar Rule',
+        subtitle: '',
+        content: contentText.trim(),
+        example: exampleText.trim()
+    };
 }
 
-function addMessage(text, type) {
-  const chatBody = document.getElementById('body');
+function transformSingleQuizSlide(questionData, title = 'Question') {
+    const groupedQuestions = questionData['slide-questions'] || questionData.slideQuestions;
+    if (groupedQuestions && Array.isArray(groupedQuestions)) {
+        let contentText = '';
+        groupedQuestions.forEach((q, i) => {
+            contentText += `${i + 1}. ${q.question || ''}\n`;
+            if (q.options && Array.isArray(q.options)) {
+                q.options.forEach((opt, j) => {
+                    contentText += `   ${String.fromCharCode(65 + j)}. ${opt}\n`;
+                });
+            }
+            contentText += '\n';
+        });
+        return { type: 'Quiz', title: questionData.title || title, subtitle: '', content: contentText.trim(), example: '' };
+    }
 
-  const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${type}-message`;
-
-  const avatarDiv = document.createElement('div');
-  avatarDiv.className = 'message-avatar';
-  avatarDiv.innerHTML = `<span class="material-icons">${type === 'ai' ? 'smart_toy' : 'person'}</span>`;
-
-  const contentDiv = document.createElement('div');
-  contentDiv.className = 'message-content';
-
-  const textDiv = document.createElement('div');
-  textDiv.className = 'message-text';
-  textDiv.textContent = text;
-
-  const timeDiv = document.createElement('div');
-  timeDiv.className = 'message-time';
-  timeDiv.textContent = 'Just now';
-
-  contentDiv.appendChild(textDiv);
-  contentDiv.appendChild(timeDiv);
-
-  if (type === 'ai') {
-    messageDiv.appendChild(avatarDiv);
-    messageDiv.appendChild(contentDiv);
-  } else {
-    messageDiv.appendChild(contentDiv);
-    messageDiv.appendChild(avatarDiv);
-  }
-
-  chatBody.appendChild(messageDiv);
-
-  // Scroll to bottom
-  chatBody.scrollTop = chatBody.scrollHeight;
+    let contentText = (questionData.question || '') + '\n\n';
+    if (questionData.options && Array.isArray(questionData.options)) {
+        questionData.options.forEach((opt, i) => {
+            contentText += `${String.fromCharCode(65 + i)}. ${opt}\n`;
+        });
+    }
+    return { type: 'Quiz', title: questionData.title || title, subtitle: '', content: contentText.trim(), example: '' };
 }
 
-function getDummyResponse(category, userMessage) {
-  const responses = {
-    vocabulary: "I can help you create vocabulary lists! Just tell me the topic and student level, and I'll generate engaging vocabulary content for your slides.",
-    quizzes: "Let's create a quiz! What topic would you like to focus on? I can generate multiple choice, true/false, or fill-in-the-blank questions.",
-    homework: "I'll help you create homework assignments. What subject and level are you teaching?",
-    grammar: "Grammar is my specialty! Which grammar concept would you like to cover? Tenses, articles, conditionals?",
-    reading: "I can create reading comprehension materials. What reading level and topic are you interested in?",
-    listening: "For listening activities, I can help you design comprehension exercises. What's your focus area?"
-  };
-
-  return responses[category] || "How can I help you with your teaching materials?";
+function transformSingleHomeworkSlide(taskData, title = 'Task') {
+    let contentText = '';
+    if (taskData.instruction) contentText += `${taskData.instruction}\n\n`;
+    if (taskData.items && Array.isArray(taskData.items)) {
+        taskData.items.forEach((item, i) => { contentText += `${i + 1}. ${item}\n`; });
+    }
+    return { type: 'Homework', title: taskData.title || title, subtitle: taskData.instruction || '', content: contentText.trim(), example: '' };
 }
 
-function showStatus(message, isSuccess = true) {
-  console.log(`Status: ${message} (${isSuccess ? 'success' : 'error'})`);
-  // Add a temporary toast notification
-  addMessage(message, 'ai');
+// Multi-slide transforms
+function transformVocabularyToSlides(vocabData) {
+    const slides = [{ type: 'Title', title: vocabData.title || 'Vocabulary', subtitle: vocabData.subtitle || '', content: '' }];
+    if (vocabData.words && Array.isArray(vocabData.words)) {
+        vocabData.words.forEach(word => slides.push(transformSingleVocabularySlide(word)));
+    }
+    return slides;
 }
 
-// ============================================================================
-// SETTINGS MANAGEMENT
-// ============================================================================
+function transformGrammarToSlides(grammarData) {
+    const slides = [{ type: 'Title', title: grammarData.title || 'Grammar', subtitle: grammarData.subtitle || '', content: '' }];
+    if (grammarData.slides && Array.isArray(grammarData.slides)) {
+        grammarData.slides.forEach(slide => slides.push(transformSingleGrammarSlide(slide)));
+    }
+    return slides;
+}
 
-function loadSettings() {
-  try {
-    const savedSettings = localStorage.getItem('classContext');
-    if (savedSettings) {
-      const parsed = JSON.parse(savedSettings);
-      classContext = { ...classContext, ...parsed };
-      console.log('Settings loaded from localStorage:', classContext);
+function transformQuizToSlides(quizData) {
+    const slides = [{
+        type: 'Title',
+        title: quizData.title || 'Quiz',
+        subtitle: quizData.subtitle || '',
+        content: `Type: ${quizData['quiz-type'] || 'Multiple Choice'} | Focus: ${quizData.focus || 'General'}`
+    }];
+    if (quizData.questions && Array.isArray(quizData.questions)) {
+        let questionNum = 0;
+        quizData.questions.forEach(q => {
+            const grouped = q['slide-questions'] || q.slideQuestions;
+            if (grouped && Array.isArray(grouped)) {
+                const from = questionNum + 1;
+                questionNum += grouped.length;
+                slides.push(transformSingleQuizSlide(q, `Questions ${from}–${questionNum}`));
+            } else if (q.question) {
+                questionNum++;
+                slides.push(transformSingleQuizSlide(q, `Question ${questionNum}`));
+            }
+        });
+    }
+    return slides;
+}
+
+function transformHomeworkToSlides(homeworkData) {
+    const slides = [{
+        type: 'Title',
+        title: homeworkData.title || 'Homework',
+        subtitle: homeworkData.subtitle || '',
+        content: `Type: ${homeworkData['homework-type'] || 'Exercise'} | Focus: ${homeworkData.focus || 'General'}`
+    }];
+    if (homeworkData.tasks && Array.isArray(homeworkData.tasks)) {
+        homeworkData.tasks.forEach((task, index) => slides.push(transformSingleHomeworkSlide(task, `Task ${index + 1}`)));
+    }
+    return slides;
+}
+
+function transformEditedSlide(slideData, originalType, existingSlide = null) {
+    switch (originalType) {
+        case 'vocabulary': return transformSingleVocabularySlide(slideData);
+        case 'grammar': return transformSingleGrammarSlide(slideData);
+        case 'quiz': return transformSingleQuizSlide(slideData, existingSlide?.title || 'Question');
+        case 'homework': return transformSingleHomeworkSlide(slideData, existingSlide?.title || 'Task');
+        default:
+            return {
+                type: slideData.type || 'Content',
+                title: slideData.title || '',
+                subtitle: slideData.subtitle || '',
+                content: slideData.content || '',
+                example: slideData.example || ''
+            };
+    }
+}
+
+// ============================================
+// UI - Messages
+// ============================================
+
+function addUserMessage(content) {
+    const template = document.getElementById('userMessageTemplate');
+    const clone = template.content.cloneNode(true);
+    const messageEl = clone.querySelector('.message-user');
+    messageEl.textContent = content;
+    appendToChatBody(messageEl);
+    state.messages.push({ type: 'user', content });
+}
+
+function addAIMessage(content) {
+    const template = document.getElementById('aiMessageTemplate');
+    const clone = template.content.cloneNode(true);
+    const messageEl = clone.querySelector('.message-ai');
+    messageEl.textContent = content;
+    appendToChatBody(messageEl);
+    state.messages.push({ type: 'ai', content });
+}
+
+// ============================================
+// UI - Progress
+// ============================================
+
+function hideProgress() {
+    if (state.progressElement && state.progressElement.parentNode) {
+        state.progressElement.remove();
+    }
+    state.progressElement = null;
+}
+
+function cancelGeneration() {
+    state.cancelled = true;
+    state.conversationId = null;
+    state.staleResponses++;
+    hideProgress();
+    setProcessing(false);
+    addAIMessage('Generation cancelled.');
+}
+
+function showProgressInPreviewArea(status) {
+    const template = document.getElementById('progressMessageTemplate');
+    const clone = template.content.cloneNode(true);
+    const progressEl = clone.querySelector('.message-progress');
+    progressEl.querySelector('.progress-status').textContent = status;
+
+    const cancelBtn = progressEl.querySelector('.progress-cancel-btn');
+    if (cancelBtn) cancelBtn.addEventListener('click', cancelGeneration);
+
+    state.progressElement = progressEl;
+    appendToChatBody(progressEl);
+}
+
+function updateProgressInPreviewArea(status) {
+    if (!state.progressElement) {
+        showProgressInPreviewArea(status);
+        return;
+    }
+    state.progressElement.querySelector('.progress-status').textContent = status;
+}
+
+function hidePreviewArea() {
+    if (state.previewElement && state.previewElement.parentNode) {
+        state.previewElement.remove();
+    }
+    state.slides = [];
+    state.previewElement = null;
+    state.isInPreviewMode = false;
+}
+
+function dismissPreview(message) {
+    if (state.previewElement && state.previewElement.parentNode) {
+        state.previewElement.remove();
+    }
+    addAIMessage(message);
+    state.slides = [];
+    state.previewElement = null;
+    state.isInPreviewMode = false;
+}
+
+// ============================================
+// UI - Slide Preview
+// ============================================
+
+function showSlidePreview(slides, summary) {
+    if (state.progressElement && state.progressElement.parentNode) {
+        state.progressElement.remove();
+        state.progressElement = null;
+    }
+
+    state.slides = slides;
+    state.currentSlideIndex = 0;
+    state.isInPreviewMode = true;
+    setProcessing(false);
+
+    const template = document.getElementById('previewContainerTemplate');
+    const clone = template.content.cloneNode(true);
+    const previewEl = clone.querySelector('.preview-container');
+
+    previewEl.querySelector('.preview-title-text').textContent = summary || 'Preview';
+    previewEl.querySelector('.preview-count').textContent = `${slides.length} slides`;
+
+    state.previewElement = previewEl;
+    appendToChatBody(previewEl);
+    updateSlideDisplay();
+    setupPreviewNavigation(previewEl);
+
+    setTimeout(() => {
+        previewEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
+}
+
+function updateSlideDisplay() {
+    if (!state.previewElement || !state.slides.length) return;
+
+    const slide = state.slides[state.currentSlideIndex];
+    const previewEl = state.previewElement;
+
+    previewEl.querySelector('.slide-counter-text').textContent =
+        `Slide ${state.currentSlideIndex + 1} of ${state.slides.length}`;
+    previewEl.querySelector('.slide-type-badge').textContent = slide.type || 'Content';
+    previewEl.querySelector('.slide-card-title').textContent = slide.title || '';
+    previewEl.querySelector('.slide-card-subtitle').textContent = slide.subtitle || '';
+    previewEl.querySelector('.slide-card-content').textContent = slide.content || '';
+
+    const exampleEl = previewEl.querySelector('.slide-card-example');
+    if (slide.example) {
+        exampleEl.textContent = slide.example;
+        exampleEl.classList.remove('hidden');
     } else {
-      console.log('No saved settings found, using defaults');
-    }
-  } catch (error) {
-    console.error('Error loading settings:', error);
-  }
-}
-
-function saveSettings() {
-  try {
-    // Get values from form
-    classContext.language = document.getElementById('settingsLanguage').value;
-    classContext.level = document.getElementById('settingsLevel').value;
-    classContext.className = document.getElementById('settingsClassName').value.trim();
-    classContext.nativeLanguage = document.getElementById('settingsNativeLanguage').value;
-    classContext.ageGroup = document.getElementById('settingsAgeGroup').value.trim();
-
-    // Validate
-    if (!classContext.className) {
-      addMessage('Please enter a class name.', 'ai');
-      return;
+        exampleEl.classList.add('hidden');
     }
 
-    // Save to localStorage
-    localStorage.setItem('classContext', JSON.stringify(classContext));
-    console.log('Settings saved:', classContext);
+    const backBtn = previewEl.querySelector('#navBackBtn');
+    const nextBtn = previewEl.querySelector('#navNextBtn');
+    backBtn.disabled = state.currentSlideIndex === 0;
 
-    // Update display
-    updateContextDisplay();
-
-    // Close modal
-    closeSettingsModal();
-
-    // Notify user
-    addMessage(`Settings updated: ${classContext.level} ${classContext.language} • ${classContext.className}`, 'ai');
-  } catch (error) {
-    console.error('Error saving settings:', error);
-    addMessage('Error saving settings. Please try again.', 'ai');
-  }
+    const slideCount = state.slides.length;
+    if (state.currentSlideIndex === state.slides.length - 1) {
+        nextBtn.innerHTML = `
+            <span class="material-icons" style="font-size: 16px;">playlist_add</span>
+            Insert ${slideCount}
+            <span class="nav-shortcut">Enter</span>
+        `;
+    } else {
+        nextBtn.innerHTML = `
+            <span class="material-icons" style="font-size: 16px;">arrow_forward</span>
+            Next
+            <span class="nav-shortcut">Enter</span>
+        `;
+    }
 }
+
+function setupPreviewNavigation(previewEl) {
+    previewEl.querySelector('#navBackBtn').addEventListener('click', navigateBack);
+    previewEl.querySelector('#navSkipBtn').addEventListener('click', removeSlide);
+    previewEl.querySelector('#navEditBtn').addEventListener('click', editSlide);
+    previewEl.querySelector('#navNextBtn').addEventListener('click', navigateNext);
+    previewEl.querySelector('#previewCancelBtn').addEventListener('click', cancelPreview);
+}
+
+function cancelPreview() {
+    dismissPreview('Preview cancelled.');
+}
+
+function navigateBack() {
+    if (state.currentSlideIndex > 0) {
+        state.currentSlideIndex--;
+        if (state.isEditMode) {
+            state.editingSlideIndex = state.currentSlideIndex;
+            updateEditBadgeSlideNumber(state.currentSlideIndex + 1);
+        }
+        updateSlideDisplay();
+    }
+}
+
+function navigateNext() {
+    if (state.currentSlideIndex < state.slides.length - 1) {
+        state.currentSlideIndex++;
+        if (state.isEditMode) {
+            state.editingSlideIndex = state.currentSlideIndex;
+            updateEditBadgeSlideNumber(state.currentSlideIndex + 1);
+        }
+        updateSlideDisplay();
+    } else {
+        insertAllSlides();
+    }
+}
+
+function removeSlide() {
+    if (state.slides.length <= 1) {
+        state.slides.splice(0, 1);
+        dismissPreview('All slides removed.');
+        return;
+    }
+
+    state.slides.splice(state.currentSlideIndex, 1);
+    if (state.currentSlideIndex >= state.slides.length) {
+        state.currentSlideIndex = state.slides.length - 1;
+    }
+    if (state.isEditMode) {
+        state.editingSlideIndex = state.currentSlideIndex;
+        updateEditBadgeSlideNumber(state.currentSlideIndex + 1);
+    }
+    updateSlideDisplay();
+}
+
+function editSlide() {
+    const { messageInput, typeSelector } = state.elements;
+    state.isEditMode = true;
+    state.editingSlideIndex = state.currentSlideIndex;
+    messageInput.placeholder = `Describe what to change on slide ${state.currentSlideIndex + 1}...`;
+    messageInput.value = '';
+    if (typeSelector) typeSelector.classList.add('hidden');
+    showEditBadge(state.currentSlideIndex + 1);
+    messageInput.focus();
+}
+
+function exitEditMode() {
+    const { messageInput, typeSelector } = state.elements;
+    state.isEditMode = false;
+    state.editingSlideIndex = null;
+    messageInput.placeholder = 'Type your request...';
+    if (typeSelector) typeSelector.classList.remove('hidden');
+    removeEditBadge();
+}
+
+function showEditBadge(slideNumber) {
+    const { editBadge, editBadgeSlideNum } = state.elements;
+    if (editBadge && editBadgeSlideNum) {
+        editBadgeSlideNum.textContent = slideNumber;
+        editBadge.classList.remove('hidden');
+    }
+}
+
+function updateEditBadgeSlideNumber(slideNumber) {
+    const { editBadgeSlideNum, messageInput } = state.elements;
+    if (editBadgeSlideNum) editBadgeSlideNum.textContent = slideNumber;
+    if (messageInput) messageInput.placeholder = `Describe what to change on slide ${slideNumber}...`;
+}
+
+function removeEditBadge() {
+    const { editBadge } = state.elements;
+    if (editBadge) editBadge.classList.add('hidden');
+}
+
+// ============================================
+// POWERPOINT SLIDE INSERTION (Direct API)
+// ============================================
+
+async function insertAllSlides() {
+    if (state.slides.length === 0) {
+        showError('No slides to insert.');
+        return;
+    }
+
+    const slidesToInsert = [...state.slides];
+
+    if (state.isEditMode) exitEditMode();
+    hidePreviewArea();
+
+    setProcessing(true);
+    showProgressInPreviewArea('Inserting slides...');
+
+    try {
+        await PowerPoint.run(async (context) => {
+            const presentation = context.presentation;
+
+            for (let i = 0; i < slidesToInsert.length; i++) {
+                const slideData = slidesToInsert[i];
+
+                updateProgressInPreviewArea(`Inserting slide ${i + 1} of ${slidesToInsert.length}...`);
+
+                presentation.slides.add();
+                await context.sync();
+
+                presentation.slides.load('items');
+                await context.sync();
+
+                const slide = presentation.slides.items[presentation.slides.items.length - 1];
+
+                slide.shapes.load('items');
+                await context.sync();
+
+                const shapesToDelete = slide.shapes.items.slice();
+                for (const shape of shapesToDelete) {
+                    shape.delete();
+                }
+                await context.sync();
+
+                await createSlideContent(slide, slideData, context);
+            }
+
+            await context.sync();
+        });
+
+        hideProgress();
+        showSuccess(`${slidesToInsert.length} slide${slidesToInsert.length !== 1 ? 's' : ''} inserted successfully`);
+        setProcessing(false);
+    } catch (error) {
+        console.error('Error inserting slides:', error);
+        hideProgress();
+        showError(`Failed to insert slides: ${error.message}`);
+        setProcessing(false);
+    }
+}
+
+async function createSlideContent(slide, slideData, context) {
+    const isTitle = slideData.type === 'Title';
+
+    // Title
+    const titleShape = slide.shapes.addTextBox(slideData.title || '');
+    titleShape.left = 50;
+    titleShape.top = isTitle ? 180 : 40;
+    titleShape.width = 620;
+    titleShape.height = isTitle ? 80 : 60;
+    await context.sync();
+
+    titleShape.textFrame.textRange.font.bold = true;
+    titleShape.textFrame.textRange.font.size = isTitle ? 44 : 32;
+    titleShape.textFrame.textRange.font.color = '#d13438';
+    if (isTitle) titleShape.textFrame.horizontalAlignment = 'Center';
+    await context.sync();
+
+    // Subtitle
+    if (slideData.subtitle) {
+        const subtitleShape = slide.shapes.addTextBox(slideData.subtitle);
+        subtitleShape.left = 50;
+        subtitleShape.top = isTitle ? 270 : 100;
+        subtitleShape.width = 620;
+        subtitleShape.height = 40;
+        await context.sync();
+
+        subtitleShape.textFrame.textRange.font.size = isTitle ? 24 : 20;
+        subtitleShape.textFrame.textRange.font.color = '#605e5c';
+        if (isTitle) subtitleShape.textFrame.horizontalAlignment = 'Center';
+        await context.sync();
+    }
+
+    // Content
+    if (slideData.content && !isTitle) {
+        const contentShape = slide.shapes.addTextBox(slideData.content);
+        contentShape.left = 50;
+        contentShape.top = 160;
+        contentShape.width = 620;
+        contentShape.height = 100;
+        await context.sync();
+
+        contentShape.textFrame.textRange.font.size = 18;
+        contentShape.textFrame.textRange.font.color = '#323130';
+        await context.sync();
+    }
+
+    // Example
+    if (slideData.example && !isTitle) {
+        const exampleShape = slide.shapes.addTextBox(slideData.example);
+        exampleShape.left = 50;
+        exampleShape.top = 280;
+        exampleShape.width = 620;
+        exampleShape.height = 60;
+        await context.sync();
+
+        exampleShape.textFrame.textRange.font.size = 16;
+        exampleShape.textFrame.textRange.font.italic = true;
+        exampleShape.textFrame.textRange.font.color = '#605e5c';
+        await context.sync();
+    }
+}
+
+// ============================================
+// UI - Success/Error
+// ============================================
+
+function showSuccess(message) {
+    hidePreviewArea();
+    const template = document.getElementById('successMessageTemplate');
+    const clone = template.content.cloneNode(true);
+    const successEl = clone.querySelector('.message-success');
+    successEl.querySelector('.success-text').textContent = message;
+    appendToChatBody(successEl);
+}
+
+function showError(message) {
+    hidePreviewArea();
+    const template = document.getElementById('errorMessageTemplate');
+    const clone = template.content.cloneNode(true);
+    const errorEl = clone.querySelector('.message-error');
+    errorEl.querySelector('.error-text').textContent = message;
+    appendToChatBody(errorEl);
+}
+
+// ============================================
+// KEYBOARD NAVIGATION
+// ============================================
+
+function flashButton(btnId) {
+    if (!state.previewElement) return;
+    const btn = state.previewElement.querySelector(`#${btnId}`);
+    if (!btn || btn.disabled) return;
+    btn.classList.add('nav-btn-pressed');
+    setTimeout(() => btn.classList.remove('nav-btn-pressed'), 150);
+}
+
+function handleGlobalKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const hasText = state.elements.messageInput.value.trim().length > 0;
+        if (hasText && !state.isProcessing) {
+            handleSend();
+        } else if (state.isInPreviewMode && !state.isProcessing) {
+            flashButton('navNextBtn');
+            navigateNext();
+        }
+        return;
+    }
+
+    if (e.key === 'Escape') {
+        if (state.isEditMode) {
+            e.preventDefault();
+            exitEditMode();
+            return;
+        }
+    }
+
+    if (e.key.toLowerCase() === 'q' && document.activeElement !== state.elements.messageInput) {
+        if (state.isProcessing) { e.preventDefault(); cancelGeneration(); return; }
+        if (state.isInPreviewMode) { e.preventDefault(); cancelPreview(); return; }
+    }
+
+    if (!state.isInPreviewMode || state.isProcessing) return;
+    if (document.activeElement === state.elements.messageInput) return;
+
+    switch (e.key.toLowerCase()) {
+        case 'r': e.preventDefault(); flashButton('navSkipBtn'); removeSlide(); break;
+        case 'e': e.preventDefault(); flashButton('navEditBtn'); editSlide(); break;
+        case 'a': e.preventDefault(); insertAllSlides(); break;
+        case 'escape': e.preventDefault(); state.elements.messageInput.focus(); break;
+        case 'arrowleft':
+        case 'backspace':
+            if (state.currentSlideIndex > 0) { e.preventDefault(); flashButton('navBackBtn'); navigateBack(); }
+            break;
+        case 'arrowright':
+            if (state.currentSlideIndex < state.slides.length - 1) { e.preventDefault(); flashButton('navNextBtn'); navigateNext(); }
+            break;
+    }
+}
+
+// ============================================
+// SETTINGS
+// ============================================
 
 function openSettingsModal() {
-  // Populate form with current values
-  document.getElementById('settingsLanguage').value = classContext.language;
-  document.getElementById('settingsLevel').value = classContext.level;
-  document.getElementById('settingsClassName').value = classContext.className;
-  document.getElementById('settingsNativeLanguage').value = classContext.nativeLanguage || '';
-  document.getElementById('settingsAgeGroup').value = classContext.ageGroup || '';
-
-  // Show modal
-  const modal = document.getElementById('settingsModal');
-  if (modal) {
-    modal.style.display = 'flex';
-  }
+    state.elements.settingsModal.classList.remove('hidden');
 }
 
 function closeSettingsModal() {
-  const modal = document.getElementById('settingsModal');
-  if (modal) {
-    modal.style.display = 'none';
-  }
+    if (!state.settingsConfirmed) return;
+    state.elements.settingsModal.classList.add('hidden');
+    loadSettingsToForm();
 }
 
-function updateContextDisplay() {
-  const display = document.getElementById('contextDisplay');
-  if (display) {
-    display.textContent = `${classContext.level} ${classContext.language} • ${classContext.className}`;
-  }
+function getSettingsStorageKey() {
+    if (state.currentFilePath) {
+        const sanitizedPath = state.currentFilePath.replace(/[^a-zA-Z0-9]/g, '_');
+        return `teachersCenterSettings_${sanitizedPath}`;
+    }
+    return 'teachersCenterSettings_default';
 }
 
-function getClassContext() {
-  return classContext;
-}
-
-// ============================================================================
-// OLD FUNCTIONS (Kept for future reference - can be removed if not needed)
-// ============================================================================
-
-/*
-// REFERENCE: Old working slide insertion code from previous version
-// This shows the correct pattern for PowerPoint API usage
-// Key insights:
-// 1. slides.add() returns void, not a slide object
-// 2. Must reload slides collection after adding
-// 3. Get slide from slides.items[slides.items.length - 1]
-// 4. Delete default placeholder shapes before adding custom content
-// 5. Sync frequently after operations
-
-async function insertSlidesFromResult(result) {
-  if (typeof PowerPoint === 'undefined') {
-    throw new Error('PowerPoint API is not available. Please make sure you are running in PowerPoint Desktop.');
-  }
-
-  if (!Office.context.requirements || !Office.context.requirements.isSetSupported) {
-    throw new Error('API requirements check not available. Please use a newer version of PowerPoint.');
-  }
-
-  const v13 = Office.context.requirements.isSetSupported('PowerPointApi', '1.3');
-  const isOnline = Office.context.diagnostics.platform === 'OfficeOnline';
-
-  if (!v13) {
-    return insertTextFallback(result);
-  }
-
-  try {
-    await PowerPoint.run(async (context) => {
-      const presentation = context.presentation;
-
-      // STEP 1: Load existing slides
-      presentation.slides.load('items');
-      await context.sync();
-
-      const titleSlideData = result.slides.find(s => s.type === 'title');
-
-      if (titleSlideData) {
-        const slides = presentation.slides;
-
-        if (typeof slides.add !== 'function') {
-          if (isOnline) {
-            return insertTextFallback(result);
-          }
-          throw new Error('slides.add() method not available. Please update to Office 2019 or Microsoft 365.');
-        }
-
-        // STEP 2: Add new slide (returns void, not a slide!)
-        slides.add();
-        await context.sync();
-
-        // STEP 3: Reload slides to get the new one
-        presentation.slides.load('items');
-        await context.sync();
-
-        // STEP 4: Get the last slide (the one we just added)
-        const titleSlide = presentation.slides.items[presentation.slides.items.length - 1];
-
-        // STEP 5: Load shapes collection
-        titleSlide.load('shapes');
-        await context.sync();
-
-        // STEP 6: Delete default placeholder shapes
-        const shapesToDelete = titleSlide.shapes.items.slice();
-        for (let shape of shapesToDelete) {
-          shape.delete();
-        }
-        await context.sync();
-
-        // STEP 7: Add custom title text box
-        const title = titleSlide.shapes.addTextBox(titleSlideData.title, {
-          left: 50,
-          top: 200,
-          width: 620,
-          height: 100
-        });
-        await context.sync();
-
-        title.textFrame.textRange.font.size = 44;
-        title.textFrame.textRange.font.bold = true;
-        title.textFrame.textRange.font.color = "#d13438";
-        await context.sync();
-
-        if (titleSlideData.subtitle) {
-          const subtitle = titleSlide.shapes.addTextBox(titleSlideData.subtitle, {
-            left: 50,
-            top: 320,
-            width: 620,
-            height: 60
-          });
-          await context.sync();
-
-          subtitle.textFrame.textRange.font.size = 20;
-          subtitle.textFrame.textRange.font.color = "#323130";
-          await context.sync();
-        }
-      }
-
-      // Add content slides (vocabulary words)
-      const contentData = result.slides.find(s => s.type === 'content');
-      if (contentData && contentData.content) {
-        for (let i = 0; i < contentData.content.length; i++) {
-          const word = contentData.content[i];
-
-          presentation.slides.add();
-          await context.sync();
-
-          presentation.slides.load('items');
-          await context.sync();
-
-          const wordSlide = presentation.slides.items[presentation.slides.items.length - 1];
-
-          wordSlide.load('shapes');
-          await context.sync();
-
-          const shapesToDelete = wordSlide.shapes.items.slice();
-          for (let shape of shapesToDelete) {
-            shape.delete();
-          }
-          await context.sync();
-
-          const wordTitle = wordSlide.shapes.addTextBox(word.word, {
-            left: 50,
-            top: 40,
-            width: 620,
-            height: 80
-          });
-          await context.sync();
-
-          wordTitle.textFrame.textRange.font.size = 40;
-          wordTitle.textFrame.textRange.font.bold = true;
-          wordTitle.textFrame.textRange.font.color = "#d13438";
-          await context.sync();
-
-          let bodyText = `Definition: ${word.definition}`;
-          if (word.translation) {
-            bodyText += `\n\nTranslation: ${word.translation}`;
-          }
-          if (word.example) {
-            bodyText += `\n\nExample: "${word.example}"`;
-          }
-
-          const body = wordSlide.shapes.addTextBox(bodyText, {
-            left: 50,
-            top: 140,
-            width: 620,
-            height: 360
-          });
-          await context.sync();
-
-          body.textFrame.textRange.font.size = 18;
-          body.textFrame.textRange.font.color = "#323130";
-          await context.sync();
-        }
-      }
-
-      await context.sync();
-    });
-  } catch (error) {
-    if (isOnline) {
-      try {
-        return await insertTextFallback(result);
-      } catch (fallbackError) {
-        throw new Error(`Failed to create slides and text fallback also failed: ${fallbackError.message}`);
-      }
+function loadSettings() {
+    try {
+        state.currentFilePath = Office.context.document?.url || null;
+    } catch (error) {
+        state.currentFilePath = null;
     }
 
-    throw new Error(`Failed to create slides: ${error.message}`);
-  }
+    const storageKey = getSettingsStorageKey();
+    const savedSettings = localStorage.getItem(storageKey);
+
+    if (savedSettings) {
+        state.settings = JSON.parse(savedSettings);
+        state.settingsConfirmed = true;
+    } else {
+        state.settings = { language: 'English', level: 'B1', nativeLanguage: 'No', ageGroup: '' };
+        state.settingsConfirmed = false;
+        setTimeout(() => openSettingsModal(), 100);
+    }
+
+    loadSettingsToForm();
+    updateContextBadge();
 }
-*/
+
+function loadSettingsToForm() {
+    const { settingsLanguage, settingsLevel, settingsNativeLanguage, settingsAgeGroup } = state.elements;
+    settingsLanguage.value = state.settings.language;
+    settingsLevel.value = state.settings.level;
+    settingsNativeLanguage.value = state.settings.nativeLanguage || 'No';
+    settingsAgeGroup.value = state.settings.ageGroup;
+}
+
+function saveSettings() {
+    const { settingsLanguage, settingsLevel, settingsNativeLanguage, settingsAgeGroup } = state.elements;
+
+    state.settings = {
+        language: settingsLanguage.value,
+        level: settingsLevel.value,
+        nativeLanguage: settingsNativeLanguage.value,
+        ageGroup: settingsAgeGroup.value
+    };
+
+    const storageKey = getSettingsStorageKey();
+    localStorage.setItem(storageKey, JSON.stringify(state.settings));
+    state.settingsConfirmed = true;
+    updateContextBadge();
+    closeSettingsModal();
+}
+
+function updateContextBadge() {
+    const { contextBadge } = state.elements;
+    if (contextBadge) {
+        contextBadge.textContent = `${state.settings.level} ${state.settings.language}`;
+    }
+}
+
+// ============================================
+// UTILITY
+// ============================================
+
+function setProcessing(isProcessing) {
+    state.isProcessing = isProcessing;
+    const { messageInput, typeOptions } = state.elements;
+
+    messageInput.disabled = isProcessing;
+    typeOptions.querySelectorAll('.type-option').forEach(btn => { btn.disabled = isProcessing; });
+
+    if (isProcessing) {
+        messageInput.placeholder = 'Generating content...';
+    } else {
+        const selectedBtn = typeOptions.querySelector('.type-option.selected');
+        messageInput.placeholder = selectedBtn?.dataset.placeholder || 'Type your request...';
+    }
+}
+
+function appendToChatBody(element) {
+    const { chatBody, welcomeState } = state.elements;
+    welcomeState.classList.add('hidden');
+    chatBody.appendChild(element);
+    chatBody.scrollTop = chatBody.scrollHeight;
+}
+
+function insertBeforePreview(element) {
+    const { chatBody, welcomeState } = state.elements;
+    welcomeState.classList.add('hidden');
+
+    if (state.previewElement && state.previewElement.parentNode === chatBody) {
+        chatBody.insertBefore(element, state.previewElement);
+    } else {
+        chatBody.appendChild(element);
+    }
+
+    if (state.previewElement) {
+        state.previewElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
