@@ -70,7 +70,7 @@
                   <bt:Image size="80" resid="Icon.80x80"/>
                 </Icon>
 
-                <Control xsi:type="Button" id="OpenDialogButton">
+                <Control xsi:type="Button" id="ShowTaskpaneButton">
                   <Label resid="TaskpaneButton.Label"/>
                   <Supertip>
                     <Title resid="TaskpaneButton.Label"/>

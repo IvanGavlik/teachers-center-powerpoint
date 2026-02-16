@@ -78,6 +78,10 @@ const state = {
 // INITIALIZATION
 // ============================================
 
+// ============================================
+// OFFICE INITIALIZATION
+// ============================================
+
 Office.onReady((info) => {
     if (info.host === Office.HostType.PowerPoint) {
         document.getElementById('sideload-msg').style.display = 'none';
