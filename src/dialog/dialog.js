@@ -297,9 +297,9 @@ function handleSend() {
     }
 
     // Validate type selection (required for normal generation)
-    if (!validateTypeSelection()) {
-        return;
-    }
+    // if (!validateTypeSelection()) {
+    //     return;
+    // }
 
     // If there's an existing preview, dismiss it first
     if (state.isInPreviewMode && state.slides.length > 0) {
@@ -587,35 +587,42 @@ function handleWebSocketMessage(data) {
             return;
         }
 
-        // Route by type field from backend (vocabulary, grammar, quiz, homework)
-        if (message.type) {
-            const slides = transformResponseByType(message);
+        // NEW — Handle unified conversation response (slide-title + content schema)
+        if (message.slides) {
+            const slides = transformConversationResponse(message);
             if (slides && slides.length > 0) {
-                const titles = {
-                    vocabulary: 'Vocabulary',
-                    grammar: 'Grammar',
-                    quiz: 'Quiz',
-                    homework: 'Homework'
-                };
-                showSlidePreview(slides, message.title || titles[message.type] || 'Generated Content');
-            } else {
-                showError(`No ${message.type} content generated. Please try a different request.`);
-                setProcessing(false);
-            }
-            return;
-        }
-
-        // Fallback for generic slides format (legacy)
-        if (message.slides || message.data) {
-            const slides = transformBackendSlides(message.slides || message.data);
-            if (slides && slides.length > 0) {
-                showSlidePreview(slides, message.summary || 'Generated Slides');
+                showSlidePreview(slides, message.title || 'Generated Content');
             } else {
                 showError('No slides generated. Please try a different request.');
                 setProcessing(false);
             }
             return;
         }
+
+        // OLD — Route by type field (vocabulary, grammar, quiz, homework) — commented out
+        // if (message.type) {
+        //     const slides = transformResponseByType(message);
+        //     if (slides && slides.length > 0) {
+        //         const titles = { vocabulary: 'Vocabulary', grammar: 'Grammar', quiz: 'Quiz', homework: 'Homework' };
+        //         showSlidePreview(slides, message.title || titles[message.type] || 'Generated Content');
+        //     } else {
+        //         showError(`No ${message.type} content generated. Please try a different request.`);
+        //         setProcessing(false);
+        //     }
+        //     return;
+        // }
+
+        // OLD — Fallback for generic slides format — commented out
+        // if (message.slides || message.data) {
+        //     const slides = transformBackendSlides(message.slides || message.data);
+        //     if (slides && slides.length > 0) {
+        //         showSlidePreview(slides, message.summary || 'Generated Slides');
+        //     } else {
+        //         showError('No slides generated. Please try a different request.');
+        //         setProcessing(false);
+        //     }
+        //     return;
+        // }
 
         if (message.error || message.message) {
             // Backend sent an error or info message
@@ -699,6 +706,38 @@ function transformBackendSlides(backendSlides) {
         content: slide.content || slide.body || '',
         example: slide.example || slide['example-sentence'] || ''
     }));
+}
+
+function transformConversationResponse(message) {
+    // Transforms the unified conversation-content.edn response schema:
+    // { title, subtitle, slides: [{ "slide-title", content }] }
+    const slides = [];
+
+    // Title slide from top-level title/subtitle
+    if (message.title) {
+        slides.push({
+            type: 'Title',
+            title: message.title,
+            subtitle: message.subtitle || '',
+            content: '',
+            example: ''
+        });
+    }
+
+    // Content slides
+    if (message.slides && Array.isArray(message.slides)) {
+        message.slides.forEach(slide => {
+            slides.push({
+                type: 'Content',
+                title: slide['slide-title'] || slide.title || '',
+                subtitle: slide.subtitle || '',
+                content: slide.content || '',
+                example: slide.example || ''
+            });
+        });
+    }
+
+    return slides;
 }
 
 // ============================================

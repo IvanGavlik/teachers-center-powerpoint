@@ -99,9 +99,6 @@ function initializeTaskpane() {
         inputContainer: document.getElementById('inputContainer'),
         newChatBtn: document.getElementById('newChatBtn'),
         contextBadge: document.getElementById('contextBadge'),
-        typeSelector: document.getElementById('typeSelector'),
-        typeOptions: document.getElementById('typeOptions'),
-        typeError: document.getElementById('typeError'),
         editBadge: document.getElementById('editBadge'),
         editBadgeSlideNum: document.getElementById('editBadgeSlideNum'),
         editBadgeCancelBtn: document.getElementById('editBadgeCancelBtn'),
@@ -118,12 +115,6 @@ function initializeTaskpane() {
     loadSettings();
     setupEventListeners();
 
-    // Set initial placeholder for default type
-    const defaultTypeBtn = state.elements.typeOptions.querySelector('.type-option.selected');
-    if (defaultTypeBtn && defaultTypeBtn.dataset.placeholder) {
-        state.elements.messageInput.placeholder = defaultTypeBtn.dataset.placeholder;
-    }
-
     // Connect to WebSocket backend
     setTimeout(() => {
         connectWebSocket();
@@ -133,7 +124,7 @@ function initializeTaskpane() {
 }
 
 function setupEventListeners() {
-    const { messageInput, newChatBtn, typeOptions } = state.elements;
+    const { messageInput, newChatBtn } = state.elements;
 
     // Block input focus until settings are confirmed
     messageInput.addEventListener('focus', () => {
@@ -147,13 +138,6 @@ function setupEventListeners() {
     messageInput.addEventListener('input', () => {
         messageInput.style.height = 'auto';
         messageInput.style.height = Math.min(messageInput.scrollHeight, 100) + 'px';
-        clearTypeValidationError();
-    });
-
-    // Type selection
-    typeOptions.addEventListener('click', (e) => {
-        const btn = e.target.closest('.type-option');
-        if (btn) selectType(btn);
     });
 
     // Header buttons
@@ -253,7 +237,7 @@ function handleSend() {
         return;
     }
 
-    if (!validateTypeSelection()) return;
+    // if (!validateTypeSelection()) return;
 
     // Dismiss existing preview
     if (state.isInPreviewMode && state.slides.length > 0) {
@@ -325,7 +309,6 @@ function handleNewChat() {
     state.editingSlideIndex = null;
     state.isEditMode = false;
 
-    resetTypeSelection();
     hidePreviewArea();
 
     const { chatBody, welcomeState } = state.elements;
@@ -480,30 +463,42 @@ function handleWebSocketMessage(data) {
             return;
         }
 
-        // Route by type
-        if (message.type) {
-            const slides = transformResponseByType(message);
+        // NEW — Handle unified conversation response (slide-title + content schema)
+        if (message.slides) {
+            const slides = transformConversationResponse(message);
             if (slides && slides.length > 0) {
-                const titles = { vocabulary: 'Vocabulary', grammar: 'Grammar', quiz: 'Quiz', homework: 'Homework' };
-                showSlidePreview(slides, message.title || titles[message.type] || 'Generated Content');
-            } else {
-                showError(`No ${message.type} content generated. Please try a different request.`);
-                setProcessing(false);
-            }
-            return;
-        }
-
-        // Legacy fallback
-        if (message.slides || message.data) {
-            const slides = transformBackendSlides(message.slides || message.data);
-            if (slides && slides.length > 0) {
-                showSlidePreview(slides, message.summary || 'Generated Slides');
+                showSlidePreview(slides, message.title || 'Generated Content');
             } else {
                 showError('No slides generated. Please try a different request.');
                 setProcessing(false);
             }
             return;
         }
+
+        // OLD — Route by type (vocabulary, grammar, quiz, homework) — commented out
+        // if (message.type) {
+        //     const slides = transformResponseByType(message);
+        //     if (slides && slides.length > 0) {
+        //         const titles = { vocabulary: 'Vocabulary', grammar: 'Grammar', quiz: 'Quiz', homework: 'Homework' };
+        //         showSlidePreview(slides, message.title || titles[message.type] || 'Generated Content');
+        //     } else {
+        //         showError(`No ${message.type} content generated. Please try a different request.`);
+        //         setProcessing(false);
+        //     }
+        //     return;
+        // }
+
+        // OLD — Legacy fallback — commented out
+        // if (message.slides || message.data) {
+        //     const slides = transformBackendSlides(message.slides || message.data);
+        //     if (slides && slides.length > 0) {
+        //         showSlidePreview(slides, message.summary || 'Generated Slides');
+        //     } else {
+        //         showError('No slides generated. Please try a different request.');
+        //         setProcessing(false);
+        //     }
+        //     return;
+        // }
 
         if (message.error || message.message) {
             hideProgress();
@@ -546,6 +541,36 @@ function transformBackendSlides(backendSlides) {
         content: slide.content || slide.body || '',
         example: slide.example || slide['example-sentence'] || ''
     }));
+}
+
+function transformConversationResponse(message) {
+    // Transforms the unified conversation-content.edn response schema:
+    // { title, subtitle, slides: [{ "slide-title", content }] }
+    const slides = [];
+
+    if (message.title) {
+        slides.push({
+            type: 'Title',
+            title: message.title,
+            subtitle: message.subtitle || '',
+            content: '',
+            example: ''
+        });
+    }
+
+    if (message.slides && Array.isArray(message.slides)) {
+        message.slides.forEach(slide => {
+            slides.push({
+                type: 'Content',
+                title: slide['slide-title'] || slide.title || '',
+                subtitle: slide.subtitle || '',
+                content: slide.content || '',
+                example: slide.example || ''
+            });
+        });
+    }
+
+    return slides;
 }
 
 // Single-item transforms
@@ -1225,17 +1250,10 @@ function updateContextBadge() {
 
 function setProcessing(isProcessing) {
     state.isProcessing = isProcessing;
-    const { messageInput, typeOptions } = state.elements;
+    const { messageInput } = state.elements;
 
     messageInput.disabled = isProcessing;
-    typeOptions.querySelectorAll('.type-option').forEach(btn => { btn.disabled = isProcessing; });
-
-    if (isProcessing) {
-        messageInput.placeholder = 'Generating content...';
-    } else {
-        const selectedBtn = typeOptions.querySelector('.type-option.selected');
-        messageInput.placeholder = selectedBtn?.dataset.placeholder || 'Type your request...';
-    }
+    messageInput.placeholder = isProcessing ? 'Generating content...' : 'Type your request...';
 }
 
 function appendToChatBody(element) {
