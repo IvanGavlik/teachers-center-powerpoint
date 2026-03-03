@@ -402,6 +402,10 @@ function sendWebSocketMessage(message) {
                 'native-language': state.settings.nativeLanguage || 'No',
                 'age-group': state.settings.ageGroup || null
             },
+            // Send all history except the last entry — the current user message is already
+            // included in the backend prompt via {{request}}, so sending it in history too
+            // would give GPT two consecutive identical user messages and break the flow.
+            messages: state.messages.slice(0, -1),
             ...(message.edit && { edit: message.edit })
         };
 
@@ -427,7 +431,11 @@ function handleWebSocketMessage(data) {
 
         if (message['requirements-not-met']) {
             hideProgress();
-            addAIMessage(message['requirements-not-met']);
+            // Display the plain text question to the user, but store the full JSON in history.
+            // GPT is instructed to always respond with JSON. If we store only the extracted text,
+            // GPT sees its own previous responses as plain text and loses the JSON-only format,
+            // causing it to reply in plain text on the next turn — which crashes the backend parser.
+            addAIMessage(message['requirements-not-met'], JSON.stringify(message));
             setProcessing(false);
             return;
         }
@@ -468,6 +476,9 @@ function handleWebSocketMessage(data) {
             const slides = transformConversationResponse(message);
             if (slides && slides.length > 0) {
                 showSlidePreview(slides, message.title || 'Generated Content');
+                // Store the full JSON in history so GPT knows what it generated in the next turn,
+                // but do NOT display it — the slide preview is the only UI feedback needed.
+                state.messages.push({ type: 'ai', content: JSON.stringify({ title: message.title, slides: message.slides }) });
             } else {
                 showError('No slides generated. Please try a different request.');
                 setProcessing(false);
@@ -731,13 +742,13 @@ function addUserMessage(content) {
     state.messages.push({ type: 'user', content });
 }
 
-function addAIMessage(content) {
+function addAIMessage(displayContent, historyContent = displayContent) {
     const template = document.getElementById('aiMessageTemplate');
     const clone = template.content.cloneNode(true);
     const messageEl = clone.querySelector('.message-ai');
-    messageEl.textContent = content;
+    messageEl.textContent = displayContent;
     appendToChatBody(messageEl);
-    state.messages.push({ type: 'ai', content });
+    state.messages.push({ type: 'ai', content: historyContent });
 }
 
 // ============================================
@@ -1019,6 +1030,8 @@ async function insertAllSlides() {
         hideProgress();
         showSuccess(`${slidesToInsert.length} slide${slidesToInsert.length !== 1 ? 's' : ''} inserted successfully`);
         setProcessing(false);
+        state.messages = [];
+        state.conversationId = null;
     } catch (error) {
         console.error('Error inserting slides:', error);
         hideProgress();
