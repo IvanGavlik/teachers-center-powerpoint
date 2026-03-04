@@ -291,8 +291,7 @@ function handleEditSend(editInstruction) {
         edit: {
             slideIndex: slideIndex,
             currentSlide: currentSlide,
-            originalRequest: state.originalRequest,
-            originalType: state.selectedType
+            originalRequest: state.originalRequest
         }
     });
 
@@ -713,20 +712,12 @@ function transformHomeworkToSlides(homeworkData) {
 }
 
 function transformEditedSlide(slideData, originalType, existingSlide = null) {
-    switch (originalType) {
-        case 'vocabulary': return transformSingleVocabularySlide(slideData);
-        case 'grammar': return transformSingleGrammarSlide(slideData);
-        case 'quiz': return transformSingleQuizSlide(slideData, existingSlide?.title || 'Question');
-        case 'homework': return transformSingleHomeworkSlide(slideData, existingSlide?.title || 'Task');
-        default:
-            return {
-                type: slideData.type || 'Content',
-                title: slideData.title || '',
-                subtitle: slideData.subtitle || '',
-                content: slideData.content || '',
-                example: slideData.example || ''
-            };
-    }
+    return {
+        type: existingSlide?.type || 'Content',
+        title: slideData['slide-title'] || '',
+        subtitle: existingSlide?.subtitle || '',
+        content: slideData.content || ''
+    };
 }
 
 // ============================================
