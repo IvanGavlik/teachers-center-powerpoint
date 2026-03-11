@@ -122,6 +122,8 @@ Here's a full manual testing guide. Use it through the PowerPoint add-in (dev mo
   Ich brauche 3 Folien über Tiere
 
   Expected: Clarification OR slides — both should be in German, not English
+  
+  OK
 
   ---
   TC-13 — Native language enabled
@@ -133,6 +135,8 @@ Here's a full manual testing guide. Use it through the PowerPoint add-in (dev mo
   - Slides generated
   - Each slide has a translation field with German translations
 
+  NOK
+
   ---
   TC-14 — Native language = No (explicit check)
 
@@ -140,6 +144,8 @@ Here's a full manual testing guide. Use it through the PowerPoint add-in (dev mo
   I need 2 vocabulary slides about weather
 
   Expected: No translation field anywhere in the response
+  
+  OK
 
   ---
   PATH 4 — Conversation Flow (multi-turn)
@@ -154,7 +160,8 @@ Here's a full manual testing guide. Use it through the PowerPoint add-in (dev mo
 
   Turn 2: 3 slides please
   → Expected: 3 slides about sports vocabulary generated
-
+	
+	OK 
   ---
   TC-16 — Start new chat resets context
 
@@ -162,6 +169,8 @@ Here's a full manual testing guide. Use it through the PowerPoint add-in (dev mo
   Give me 3 slides please
 
   Expected: GPT asks for topic again — it does NOT remember the previous "sports" context
+
+  OK	
 
   ---
   PATH 5 — Slide Editing
@@ -176,6 +185,8 @@ Here's a full manual testing guide. Use it through the PowerPoint add-in (dev mo
   Make the content shorter, maximum 4 lines
 
   Expected: That single slide returns with condensed content, other slides unchanged
+  
+  OK
 
   ---
   TC-18 — Change a slide's topic
@@ -184,6 +195,8 @@ Here's a full manual testing guide. Use it through the PowerPoint add-in (dev mo
   Change the topic of this slide to drinks instead of food
 
   Expected: Slide 2 regenerated with drinks vocabulary, same format
+  
+  OK
 
   ---
   TC-19 — Add examples to a slide
@@ -192,6 +205,8 @@ Here's a full manual testing guide. Use it through the PowerPoint add-in (dev mo
   Add 2 example sentences showing the rule in action
 
   Expected: Same slide returned with 2 new example sentences added
+  
+  OK
 
   ---
   TC-20 — Make slide simpler (level adjustment)
@@ -200,6 +215,8 @@ Here's a full manual testing guide. Use it through the PowerPoint add-in (dev mo
   Simplify this for A1 students, use very basic vocabulary
 
   Expected: Simpler language, shorter words, no complex structures
+  
+  OK
 
   ---
   PATH 6 — Edge Cases & Stress
@@ -210,7 +227,8 @@ Here's a full manual testing guide. Use it through the PowerPoint add-in (dev mo
 
   Expected: GPT should either refuse politely or ask to clarify in the context of language teaching (the system prompt
   constrains it to language teacher role)
-
+	
+  OK
   ---
   TC-22 — Request violates level appropriateness
 
@@ -235,98 +253,26 @@ Here's a full manual testing guide. Use it through the PowerPoint add-in (dev mo
   ---
   What to watch for in every response
 
-  ┌────────────────────────────────────────────┬─────────────────────────────────────────────────┐
-  │                   Signal                   │                  What it means                  │
-  ├────────────────────────────────────────────┼─────────────────────────────────────────────────┤
-  │ requirements-not-met field in response     │ Prompt validation working correctly             │
-  ├────────────────────────────────────────────┼─────────────────────────────────────────────────┤
-  │ Slides with 5–7 lines max                  │ Cognitive load rule respected                   │
-  ├────────────────────────────────────────────┼─────────────────────────────────────────────────┤
-  │ Symbols used (✓ ✗ →)                       │ Formatting style applied                        │
-  ├────────────────────────────────────────────┼─────────────────────────────────────────────────┤
-  │ No long paragraphs                         │ Scannability rule respected                     │
-  ├────────────────────────────────────────────┼─────────────────────────────────────────────────┤
-  │ One concept per slide                      │ "Break complex into small units" rule respected │
-  ├────────────────────────────────────────────┼─────────────────────────────────────────────────┤
-  │ translation field present/absent           │ Native language rule applied                    │
-  ├────────────────────────────────────────────┼─────────────────────────────────────────────────┤
-  │ Response language matches request language │ Language-awareness working                      │
-  └────────────────────────────────────────────┴─────────────────────────────────────────────────┘
+
+TODO FIX
   
-  
-  
-TODO
 
-
-----   
-Edit does not work 
-
-I need vocabulary slides about animals
-Could you please specify the number of slides you want and the type of content (explanation, examples, tasks, quiz, homework or something else) you would like each slide to contain?
-5 slides with examples
-Edit slide 2: examples should be sentences short for this level
-Slide updated.
-(did not see updated content on the slide)
-
-
-----
-
-Asking for task 
-
-Give me 5 slides
-Could you please specify the topic and the type of content you want in the slides (explanation, examples, tasks, quiz, homework or something else)?
-Travel tasks for conversation
-
-Content is not formated good 
-Discuss with a partner: 🔹 What are the essential items you pack for a trip? 🔹 What items do people often forget?
-
-----
-
-new converstaion 
-
-I need 2 slides explaining Present Simple affirmative and negative forms
-error
-Failed to process message
-
----
-
- OpenAI API error response {:status 429, :body {
-    "error": {
-        "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.",
-        "type": "insufficient_quota",
-        "param": null,
-        "code": "insufficient_quota"
-    }
-}
-}
-
----
-
-X should also clearn message history 
 
 ---
 
 deleta all slideds what happens ? test this 
+- all slides remove what about chat histora 
 
+todo ask to make test for chat history double check the code see where at which palces and when is should be delete it is not only on create 
 ----
 
 TEST EDIT ask to change layout of the slide (look) not the content 
 
 
 
------
 
 
-
- ---
-  Teacher Center — Manual Testing Guide
-
-  Setup
-
-  Before testing, make sure both are running:
-  - Backend: clj -M:dev:repl → (go) in the REPL (or the Docker container is up at
-  https://teachers-center-be.onrender.com)
-  - Frontend: npm start in teachers-center-powerpoint/ to sideload into PowerPoint
+ ---t
 
   ---
   1. First Launch — Settings Gate
@@ -739,3 +685,14 @@ TEST EDIT ask to change layout of the slide (look) not the content
   3. Content type selected (vocabulary/grammar/quiz/homework)
   4. What happened vs what was expected
   5. Was there conversation context (prior slides in the same session)?
+  
+  
+  Click on the X does not closes / created new coversation it should be like with + 
+  also delete -> all slides removed 
+  alerting and monitoring 
+	-> somehting bad happen I want nice message, good log, automaticall alert (email or something) 
+  saving what users are requesting 
+	-> mayne in the file for the first version 
+
+BE and FE clean dead code 	
+	

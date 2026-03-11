@@ -54,7 +54,6 @@ const state = {
     settings: {
         language: 'English',
         level: 'B1',
-        nativeLanguage: 'No',
         ageGroup: ''
     },
 
@@ -108,7 +107,6 @@ function initializeTaskpane() {
         saveSettingsBtn: document.getElementById('saveSettingsBtn'),
         settingsLanguage: document.getElementById('settingsLanguage'),
         settingsLevel: document.getElementById('settingsLevel'),
-        settingsNativeLanguage: document.getElementById('settingsNativeLanguage'),
         settingsAgeGroup: document.getElementById('settingsAgeGroup')
     };
 
@@ -398,7 +396,7 @@ function sendWebSocketMessage(message) {
             requirements: {
                 language: state.settings.language,
                 level: state.settings.level,
-                'native-language': state.settings.nativeLanguage || 'No',
+                'native-language': 'No',
                 'age-group': state.settings.ageGroup || null
             },
             // Send all history except the last entry — the current user message is already
@@ -441,6 +439,13 @@ function handleWebSocketMessage(data) {
 
         if (message.type === 'progress') {
             updateProgressInPreviewArea(message.stage || message.message);
+            return;
+        }
+
+        if (message.type === 'error') {
+            hideProgress();
+            showError(message.message);
+            setProcessing(false);
             return;
         }
 
@@ -1207,7 +1212,7 @@ function loadSettings() {
         state.settings = JSON.parse(savedSettings);
         state.settingsConfirmed = true;
     } else {
-        state.settings = { language: 'English', level: 'B1', nativeLanguage: 'No', ageGroup: '' };
+        state.settings = { language: 'English', level: 'B1', ageGroup: '' };
         state.settingsConfirmed = false;
         setTimeout(() => openSettingsModal(), 100);
     }
@@ -1217,20 +1222,18 @@ function loadSettings() {
 }
 
 function loadSettingsToForm() {
-    const { settingsLanguage, settingsLevel, settingsNativeLanguage, settingsAgeGroup } = state.elements;
+    const { settingsLanguage, settingsLevel, settingsAgeGroup } = state.elements;
     settingsLanguage.value = state.settings.language;
     settingsLevel.value = state.settings.level;
-    settingsNativeLanguage.value = state.settings.nativeLanguage || 'No';
     settingsAgeGroup.value = state.settings.ageGroup;
 }
 
 function saveSettings() {
-    const { settingsLanguage, settingsLevel, settingsNativeLanguage, settingsAgeGroup } = state.elements;
+    const { settingsLanguage, settingsLevel, settingsAgeGroup } = state.elements;
 
     state.settings = {
         language: settingsLanguage.value,
         level: settingsLevel.value,
-        nativeLanguage: settingsNativeLanguage.value,
         ageGroup: settingsAgeGroup.value
     };
 
