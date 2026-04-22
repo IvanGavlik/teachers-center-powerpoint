@@ -12,13 +12,13 @@
   <ProviderName>Wortkraftmaster vl. Ivan Gavlik</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
 
-  <DisplayName DefaultValue="Teacher Assistant PowerPoint (Dev)"/>
-  <Description DefaultValue="Development version - localhost"/>
+  <DisplayName DefaultValue="Teacher Assistant"/>
+  <Description DefaultValue="A Microsoft Office Add-in that lets teachers chat with the AI to help them prepare lectures"/>
 
   <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>
 
-  <SupportUrl DefaultValue="https://localhost:3000/assets/support.html"/>
+  <SupportUrl DefaultValue="https://teacher-assistant.center/support.html"/>
 
   <AppDomains>
     <AppDomain>https://localhost:3000</AppDomain>
@@ -110,7 +110,7 @@
       </bt:Images>
 
       <bt:Urls>
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://go.microsoft.com/fwlink/?LinkId=276812"/>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://teacher-assistant.center/index.html"/>
         <bt:Url id="Commands.Url" DefaultValue="https://localhost:3000/commands.html"/>
         <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html"/>
       </bt:Urls>

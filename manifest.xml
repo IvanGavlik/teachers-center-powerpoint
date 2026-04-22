@@ -13,7 +13,7 @@
   <DefaultLocale>en-US</DefaultLocale>
 
   <DisplayName DefaultValue="Teacher Assistant"/>
-  <Description DefaultValue="AI-powered teaching assistant that generates vocabulary, grammar, quiz, and homework slides directly in PowerPoint."/>
+  <Description DefaultValue="A Microsoft Office Add-in that lets teachers chat with the AI to help them prepare lectures"/>
 
   <IconUrl DefaultValue="https://teachers-center-powerpoint.onrender.com/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://teachers-center-powerpoint.onrender.com/assets/icon-64.png"/>
