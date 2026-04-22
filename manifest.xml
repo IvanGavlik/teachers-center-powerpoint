@@ -18,7 +18,7 @@
   <IconUrl DefaultValue="https://teachers-center-powerpoint.onrender.com/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://teachers-center-powerpoint.onrender.com/assets/icon-64.png"/>
 
-  <SupportUrl DefaultValue="https://teachers-center-powerpoint.onrender.com/assets/support.html"/>
+  <SupportUrl DefaultValue="https://teacher-assistant.center/support.html"/>
 
 
 
@@ -106,7 +106,7 @@
       </bt:Images>
 
       <bt:Urls>
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://go.microsoft.com/fwlink/?LinkId=276812"/>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://teacher-assistant.center/index.html"/>
         <bt:Url id="Commands.Url" DefaultValue="https://teachers-center-powerpoint.onrender.com/commands.html"/>
         <bt:Url id="Taskpane.Url" DefaultValue="https://teachers-center-powerpoint.onrender.com/taskpane.html"/>
       </bt:Urls>
