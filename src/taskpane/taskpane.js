@@ -83,9 +83,15 @@ const state = {
 
 Office.onReady((info) => {
     if (info.host === Office.HostType.PowerPoint) {
-        document.getElementById('sideload-msg').style.display = 'none';
-        document.getElementById('app-body').style.display = 'flex';
-        initializeTaskpane();
+        const isWeb = Office.context.platform === Office.PlatformType.OfficeOnline;
+        if (isWeb) {
+            document.getElementById('sideload-msg').style.display = 'none';
+            document.getElementById('web-not-supported').style.display = 'block';
+        } else {
+            document.getElementById('sideload-msg').style.display = 'none';
+            document.getElementById('app-body').style.display = 'flex';
+            initializeTaskpane();
+        }
     }
 });
 
