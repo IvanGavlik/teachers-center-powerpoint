@@ -8,6 +8,7 @@
 
 // Import CSS for webpack bundling
 import './taskpane.css';
+import PptxGenJS from 'pptxgenjs';
 
 // ============================================
 // WEBSOCKET CONFIGURATION
@@ -60,6 +61,9 @@ const state = {
     // Current file path (for per-file settings)
     currentFilePath: null,
 
+    // Platform
+    isWeb: false,
+
     // WebSocket state
     ws: null,
     wsState: 'disconnected',
@@ -83,15 +87,10 @@ const state = {
 
 Office.onReady((info) => {
     if (info.host === Office.HostType.PowerPoint) {
-        const isWeb = Office.context.platform === Office.PlatformType.OfficeOnline;
-        if (isWeb) {
-            document.getElementById('sideload-msg').style.display = 'none';
-            document.getElementById('web-not-supported').style.display = 'block';
-        } else {
-            document.getElementById('sideload-msg').style.display = 'none';
-            document.getElementById('app-body').style.display = 'flex';
-            initializeTaskpane();
-        }
+        state.isWeb = Office.context.platform === Office.PlatformType.OfficeOnline;
+        document.getElementById('sideload-msg').style.display = 'none';
+        document.getElementById('app-body').style.display = 'flex';
+        initializeTaskpane();
     }
 });
 
@@ -980,6 +979,49 @@ function removeEditBadge() {
 }
 
 // ============================================
+// WEB: COPY ALL SLIDES TO CLIPBOARD (fallback if insert API fails)
+// ============================================
+
+/* async function copyAllSlides() {
+    const lines = [];
+
+    state.slides.forEach((slide, i) => {
+        if (i === 0 && slide.type === 'Title') {
+            lines.push(`=== ${slide.title} ===`);
+            if (slide.subtitle) lines.push(slide.subtitle);
+        } else {
+            lines.push(`--- Slide ${i + 1}: ${slide.title} ---`);
+            if (slide.subtitle) lines.push(slide.subtitle);
+            if (slide.content) lines.push(slide.content);
+            if (slide.example) lines.push(`Example: ${slide.example}`);
+        }
+        lines.push('');
+    });
+
+    const text = lines.join('\n').trim();
+
+    try {
+        await navigator.clipboard.writeText(text);
+        showSuccess('Copied! Paste the content into your slides.');
+    } catch (_err) {
+        // navigator.clipboard is blocked in Office add-in iframes — fall back to execCommand
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) {
+            showSuccess('Copied! Paste the content into your slides.');
+        } else {
+            showError('Could not copy to clipboard. Please copy the content manually.');
+        }
+    }
+} */
+
+// ============================================
 // POWERPOINT SLIDE INSERTION (Direct API)
 // ============================================
 
@@ -998,36 +1040,55 @@ async function insertAllSlides() {
     showProgressInPreviewArea('Inserting slides...');
 
     try {
-        await PowerPoint.run(async (context) => {
-            const presentation = context.presentation;
-
-            for (let i = 0; i < slidesToInsert.length; i++) {
-                const slideData = slidesToInsert[i];
-
-                updateProgressInPreviewArea(`Inserting slide ${i + 1} of ${slidesToInsert.length}...`);
-
-                presentation.slides.add();
+        if (state.isWeb) {
+            updateProgressInPreviewArea('Building slides...');
+            const base64 = await buildPptxBase64(slidesToInsert);
+            await PowerPoint.run(async (context) => {
+                const presentation = context.presentation;
+                presentation.slides.load('items/id');
                 await context.sync();
 
-                presentation.slides.load('items');
+                const items = presentation.slides.items;
+                const lastSlideId = items.length > 0 ? items[items.length - 1].id : undefined;
+
+                presentation.insertSlidesFromBase64(base64, {
+                    formatting: 'UseDestinationTheme',
+                    targetSlideId: lastSlideId,
+                });
                 await context.sync();
+            });
+        } else {
+            await PowerPoint.run(async (context) => {
+                const presentation = context.presentation;
 
-                const slide = presentation.slides.items[presentation.slides.items.length - 1];
+                for (let i = 0; i < slidesToInsert.length; i++) {
+                    const slideData = slidesToInsert[i];
 
-                slide.shapes.load('items');
-                await context.sync();
+                    updateProgressInPreviewArea(`Inserting slide ${i + 1} of ${slidesToInsert.length}...`);
 
-                const shapesToDelete = slide.shapes.items.slice();
-                for (const shape of shapesToDelete) {
-                    shape.delete();
+                    presentation.slides.add();
+                    await context.sync();
+
+                    presentation.slides.load('items');
+                    await context.sync();
+
+                    const slide = presentation.slides.items[presentation.slides.items.length - 1];
+
+                    slide.shapes.load('items');
+                    await context.sync();
+
+                    const shapesToDelete = slide.shapes.items.slice();
+                    for (const shape of shapesToDelete) {
+                        shape.delete();
+                    }
+                    await context.sync();
+
+                    await createSlideContent(slide, slideData, context);
                 }
+
                 await context.sync();
-
-                await createSlideContent(slide, slideData, context);
-            }
-
-            await context.sync();
-        });
+            });
+        }
 
         hideProgress();
         showSuccess(`${slidesToInsert.length} slide${slidesToInsert.length !== 1 ? 's' : ''} inserted successfully`);
@@ -1102,6 +1163,64 @@ async function createSlideContent(slide, slideData, context) {
         exampleShape.textFrame.textRange.font.color = '#605e5c';
         await context.sync();
     }
+}
+
+async function buildPptxBase64(slides) {
+    const pt = (v) => +(v / 72).toFixed(4); // Office JS points → PptxGenJS inches
+    const pptx = new PptxGenJS();
+
+    for (const slideData of slides) {
+        const isTitle = slideData.type === 'Title';
+        const slide = pptx.addSlide();
+
+        // Title
+        slide.addText(slideData.title || '', {
+            x: pt(50), y: pt(isTitle ? 180 : 40),
+            w: pt(620), h: pt(isTitle ? 80 : 60),
+            fontSize: isTitle ? 44 : 32,
+            bold: true,
+            color: 'd13438',
+            align: isTitle ? 'center' : 'left',
+            wrap: true,
+        });
+
+        // Subtitle
+        if (slideData.subtitle) {
+            slide.addText(slideData.subtitle, {
+                x: pt(50), y: pt(isTitle ? 270 : 100),
+                w: pt(620), h: pt(40),
+                fontSize: isTitle ? 24 : 20,
+                color: '605e5c',
+                align: isTitle ? 'center' : 'left',
+                wrap: true,
+            });
+        }
+
+        // Content
+        if (slideData.content && !isTitle) {
+            slide.addText(slideData.content, {
+                x: pt(50), y: pt(160),
+                w: pt(620), h: pt(100),
+                fontSize: 18,
+                color: '323130',
+                wrap: true,
+            });
+        }
+
+        // Example
+        if (slideData.example && !isTitle) {
+            slide.addText(slideData.example, {
+                x: pt(50), y: pt(280),
+                w: pt(620), h: pt(60),
+                fontSize: 16,
+                italic: true,
+                color: '605e5c',
+                wrap: true,
+            });
+        }
+    }
+
+    return await pptx.write('base64');
 }
 
 // ============================================

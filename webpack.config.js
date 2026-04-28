@@ -37,6 +37,10 @@ module.exports = async (env, options) => {
     },
     resolve: {
       extensions: [".html", ".js"],
+      fallback: {
+        fs: false,
+        https: false,
+      },
     },
     module: {
       rules: [
@@ -66,6 +70,10 @@ module.exports = async (env, options) => {
       ],
     },
     plugins: [
+      // Strip "node:" URI prefix so resolve.fallback rules can apply (needed by pptxgenjs)
+      new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+        resource.request = resource.request.replace(/^node:/, '');
+      }),
       // Inject environment-specific URLs
       new webpack.DefinePlugin({
         "process.env.WS_URL": JSON.stringify(dev ? backendDev.WS_URL : backendProd.WS_URL),
