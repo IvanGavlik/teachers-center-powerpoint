@@ -542,6 +542,7 @@ function handleWebSocketMessage(data) {
 // TRANSFORM FUNCTIONS
 // ============================================
 
+// OLD section - deprecated
 function transformResponseByType(message) {
     switch (message.type) {
         case 'vocabulary': return transformVocabularyToSlides(message);
@@ -552,6 +553,7 @@ function transformResponseByType(message) {
     }
 }
 
+// OLD section - deprecated
 function transformBackendSlides(backendSlides) {
     if (!backendSlides || !Array.isArray(backendSlides)) return [];
     return backendSlides.map(slide => ({
@@ -594,6 +596,7 @@ function transformConversationResponse(message) {
 }
 
 // Single-item transforms
+// OLD section - deprecated
 function transformSingleVocabularySlide(wordData) {
     return {
         type: 'Vocabulary',
@@ -604,6 +607,7 @@ function transformSingleVocabularySlide(wordData) {
     };
 }
 
+// OLD section - deprecated
 function transformSingleGrammarSlide(slideData) {
     let contentText = '';
     if (typeof slideData.content === 'string') {
@@ -633,6 +637,7 @@ function transformSingleGrammarSlide(slideData) {
     };
 }
 
+// OLD section - deprecated
 function transformSingleQuizSlide(questionData, title = 'Question') {
     const groupedQuestions = questionData['slide-questions'] || questionData.slideQuestions;
     if (groupedQuestions && Array.isArray(groupedQuestions)) {
@@ -658,6 +663,7 @@ function transformSingleQuizSlide(questionData, title = 'Question') {
     return { type: 'Quiz', title: questionData.title || title, subtitle: '', content: contentText.trim(), example: '' };
 }
 
+// OLD section - deprecated
 function transformSingleHomeworkSlide(taskData, title = 'Task') {
     let contentText = '';
     if (taskData.instruction) contentText += `${taskData.instruction}\n\n`;
@@ -668,6 +674,7 @@ function transformSingleHomeworkSlide(taskData, title = 'Task') {
 }
 
 // Multi-slide transforms
+// OLD section - deprecated
 function transformVocabularyToSlides(vocabData) {
     const slides = [{ type: 'Title', title: vocabData.title || 'Vocabulary', subtitle: vocabData.subtitle || '', content: '' }];
     if (vocabData.words && Array.isArray(vocabData.words)) {
@@ -676,6 +683,7 @@ function transformVocabularyToSlides(vocabData) {
     return slides;
 }
 
+// OLD section - deprecated
 function transformGrammarToSlides(grammarData) {
     const slides = [{ type: 'Title', title: grammarData.title || 'Grammar', subtitle: grammarData.subtitle || '', content: '' }];
     if (grammarData.slides && Array.isArray(grammarData.slides)) {
@@ -684,6 +692,7 @@ function transformGrammarToSlides(grammarData) {
     return slides;
 }
 
+// OLD section - deprecated
 function transformQuizToSlides(quizData) {
     const slides = [{
         type: 'Title',
@@ -708,6 +717,7 @@ function transformQuizToSlides(quizData) {
     return slides;
 }
 
+// OLD section - deprecated
 function transformHomeworkToSlides(homeworkData) {
     const slides = [{
         type: 'Title',
