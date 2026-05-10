@@ -20,6 +20,30 @@ const CHANNEL_NAME = 'powerpoint-taskpane';
 const MAX_RECONNECT_ATTEMPTS = 3;
 
 // ============================================
+// SLIDE THEME — single source of truth for colors used in
+// both the preview UI (injected as CSS vars) and slide insertion
+// ============================================
+
+const SLIDE_THEME = {
+    colors: {
+        title:        '#d13438',   // --accent-primary  (slide titles, accent)
+        accentHover:  '#b7472a',   // --accent-hover
+        accentLight:  '#fdf3f3',   // --accent-light
+        subtitle:     '#605e5c',   // --text-secondary  (subtitles, examples)
+        content:      '#323130',   // --text-primary    (body text)
+        bgPrimary:    '#faf9f8',   // --bg-primary
+        bgSecondary:  '#ffffff',   // --bg-secondary
+        bgTertiary:   '#f3f2f1',   // --bg-tertiary
+        borderLight:  '#edebe9',   // --border-light
+        borderMedium: '#d2d0ce',   // --border-medium
+        successBg:    '#dff6dd',   // --success-bg
+        successText:  '#107c10',   // --success-text
+        errorBg:      '#fde7e9',   // --error-bg
+        errorText:    '#a80000',   // --error-text
+    }
+};
+
+// ============================================
 // STATE MANAGEMENT
 // ============================================
 
@@ -94,7 +118,27 @@ Office.onReady((info) => {
     }
 });
 
+function applyCSSVariables() {
+    const root = document.documentElement.style;
+    root.setProperty('--accent-primary',  SLIDE_THEME.colors.title);
+    root.setProperty('--accent-hover',    SLIDE_THEME.colors.accentHover);
+    root.setProperty('--accent-light',    SLIDE_THEME.colors.accentLight);
+    root.setProperty('--text-primary',    SLIDE_THEME.colors.content);
+    root.setProperty('--text-secondary',  SLIDE_THEME.colors.subtitle);
+    root.setProperty('--bg-primary',      SLIDE_THEME.colors.bgPrimary);
+    root.setProperty('--bg-secondary',    SLIDE_THEME.colors.bgSecondary);
+    root.setProperty('--bg-tertiary',     SLIDE_THEME.colors.bgTertiary);
+    root.setProperty('--border-light',    SLIDE_THEME.colors.borderLight);
+    root.setProperty('--border-medium',   SLIDE_THEME.colors.borderMedium);
+    root.setProperty('--success-bg',      SLIDE_THEME.colors.successBg);
+    root.setProperty('--success-text',    SLIDE_THEME.colors.successText);
+    root.setProperty('--error-bg',        SLIDE_THEME.colors.errorBg);
+    root.setProperty('--error-text',      SLIDE_THEME.colors.errorText);
+}
+
 function initializeTaskpane() {
+    applyCSSVariables();
+
     // Cache DOM elements
     state.elements = {
         chatBody: document.getElementById('chatBody'),
@@ -1126,7 +1170,7 @@ async function createSlideContent(slide, slideData, context) {
 
     titleShape.textFrame.textRange.font.bold = true;
     titleShape.textFrame.textRange.font.size = isTitle ? 44 : 32;
-    titleShape.textFrame.textRange.font.color = '#d13438';
+    titleShape.textFrame.textRange.font.color = SLIDE_THEME.colors.title;
     if (isTitle) titleShape.textFrame.horizontalAlignment = 'Center';
     await context.sync();
 
@@ -1140,7 +1184,7 @@ async function createSlideContent(slide, slideData, context) {
         await context.sync();
 
         subtitleShape.textFrame.textRange.font.size = isTitle ? 24 : 20;
-        subtitleShape.textFrame.textRange.font.color = '#605e5c';
+        subtitleShape.textFrame.textRange.font.color = SLIDE_THEME.colors.subtitle;
         if (isTitle) subtitleShape.textFrame.horizontalAlignment = 'Center';
         await context.sync();
     }
@@ -1155,7 +1199,7 @@ async function createSlideContent(slide, slideData, context) {
         await context.sync();
 
         contentShape.textFrame.textRange.font.size = 18;
-        contentShape.textFrame.textRange.font.color = '#323130';
+        contentShape.textFrame.textRange.font.color = SLIDE_THEME.colors.content;
         await context.sync();
     }
 
@@ -1170,13 +1214,14 @@ async function createSlideContent(slide, slideData, context) {
 
         exampleShape.textFrame.textRange.font.size = 16;
         exampleShape.textFrame.textRange.font.italic = true;
-        exampleShape.textFrame.textRange.font.color = '#605e5c';
+        exampleShape.textFrame.textRange.font.color = SLIDE_THEME.colors.subtitle;
         await context.sync();
     }
 }
 
 async function buildPptxBase64(slides) {
     const pt = (v) => +(v / 72).toFixed(4); // Office JS points → PptxGenJS inches
+    const c = (hex) => hex.slice(1);         // PptxGenJS expects colors without #
     const pptx = new PptxGenJS();
 
     for (const slideData of slides) {
@@ -1189,7 +1234,7 @@ async function buildPptxBase64(slides) {
             w: pt(620), h: pt(isTitle ? 80 : 60),
             fontSize: isTitle ? 44 : 32,
             bold: true,
-            color: 'd13438',
+            color: c(SLIDE_THEME.colors.title),
             align: isTitle ? 'center' : 'left',
             wrap: true,
         });
@@ -1200,7 +1245,7 @@ async function buildPptxBase64(slides) {
                 x: pt(50), y: pt(isTitle ? 270 : 100),
                 w: pt(620), h: pt(40),
                 fontSize: isTitle ? 24 : 20,
-                color: '605e5c',
+                color: c(SLIDE_THEME.colors.subtitle),
                 align: isTitle ? 'center' : 'left',
                 wrap: true,
             });
@@ -1212,7 +1257,7 @@ async function buildPptxBase64(slides) {
                 x: pt(50), y: pt(160),
                 w: pt(620), h: pt(100),
                 fontSize: 18,
-                color: '323130',
+                color: c(SLIDE_THEME.colors.content),
                 wrap: true,
             });
         }
@@ -1224,7 +1269,7 @@ async function buildPptxBase64(slides) {
                 w: pt(620), h: pt(60),
                 fontSize: 16,
                 italic: true,
-                color: '605e5c',
+                color: c(SLIDE_THEME.colors.subtitle),
                 wrap: true,
             });
         }

@@ -7,7 +7,9 @@
 }
 
 :root {
-    /* PowerPoint red accent colors */
+    /* Static fallbacks — overridden at runtime by SLIDE_THEME in taskpane.js.
+       To change colors, update SLIDE_THEME in taskpane.js only.
+       These values are kept as a safety net if JS fails to initialize. */
     --accent-primary: #d13438;
     --accent-hover: #b7472a;
     --accent-light: #fdf3f3;
