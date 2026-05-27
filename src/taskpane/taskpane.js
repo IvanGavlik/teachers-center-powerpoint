@@ -9,12 +9,14 @@
 // Import CSS for webpack bundling
 import './taskpane.css';
 import PptxGenJS from 'pptxgenjs';
+import JSZip from 'jszip';
 
 // ============================================
 // WEBSOCKET CONFIGURATION
 // ============================================
 
 const WS_URL = process.env.WS_URL;
+const API_URL = process.env.API_URL;
 const USER_ID = 'user-123';  // TODO: implement proper user management
 const CHANNEL_NAME = 'powerpoint-taskpane';
 const MAX_RECONNECT_ATTEMPTS = 3;
@@ -26,11 +28,18 @@ const MAX_RECONNECT_ATTEMPTS = 3;
 
 const SLIDE_THEME = {
     colors: {
-        title:        '#d13438',   // --accent-primary  (slide titles, accent)
+        title:        '#d13438',   // --accent-primary  (slide titles, accent1 from theme)
+        accent2:      '#ed7d31',   // --accent-2
+        accent3:      '#a5a5a5',   // --accent-3
+        accent4:      '#ffc000',   // --accent-4
+        accent5:      '#5b9bd5',   // --accent-5
+        accent6:      '#70ad47',   // --accent-6
         accentHover:  '#b7472a',   // --accent-hover
         accentLight:  '#fdf3f3',   // --accent-light
         subtitle:     '#605e5c',   // --text-secondary  (subtitles, examples)
         content:      '#323130',   // --text-primary    (body text)
+        bgSlide:      '#ffffff',   // --bg-slide        (slide background, background1 from theme)
+        bgSlideAlt:   '#f3f2f1',   // --bg-slide-alt    (secondary slide bg, background2 from theme)
         bgPrimary:    '#faf9f8',   // --bg-primary
         bgSecondary:  '#ffffff',   // --bg-secondary
         bgTertiary:   '#f3f2f1',   // --bg-tertiary
@@ -40,6 +49,10 @@ const SLIDE_THEME = {
         successText:  '#107c10',   // --success-text
         errorBg:      '#fde7e9',   // --error-bg
         errorText:    '#a80000',   // --error-text
+    },
+    fonts: {
+        heading: 'Calibri Light',  // --font-heading (title shapes, majorFont from theme)
+        body:    'Calibri'         // --font-body    (content/subtitle/example, minorFont from theme)
     }
 };
 
@@ -101,6 +114,9 @@ const state = {
     elements: {}
 };
 
+// Selected star value for the feedback modal (module-level so setupEventListeners can access it)
+let selectedStarRating = 0;
+
 // ============================================
 // INITIALIZATION
 // ============================================
@@ -121,10 +137,17 @@ Office.onReady((info) => {
 function applyCSSVariables() {
     const root = document.documentElement.style;
     root.setProperty('--accent-primary',  SLIDE_THEME.colors.title);
+    root.setProperty('--accent-2',        SLIDE_THEME.colors.accent2);
+    root.setProperty('--accent-3',        SLIDE_THEME.colors.accent3);
+    root.setProperty('--accent-4',        SLIDE_THEME.colors.accent4);
+    root.setProperty('--accent-5',        SLIDE_THEME.colors.accent5);
+    root.setProperty('--accent-6',        SLIDE_THEME.colors.accent6);
     root.setProperty('--accent-hover',    SLIDE_THEME.colors.accentHover);
     root.setProperty('--accent-light',    SLIDE_THEME.colors.accentLight);
     root.setProperty('--text-primary',    SLIDE_THEME.colors.content);
     root.setProperty('--text-secondary',  SLIDE_THEME.colors.subtitle);
+    root.setProperty('--bg-slide',        SLIDE_THEME.colors.bgSlide);
+    root.setProperty('--bg-slide-alt',    SLIDE_THEME.colors.bgSlideAlt);
     root.setProperty('--bg-primary',      SLIDE_THEME.colors.bgPrimary);
     root.setProperty('--bg-secondary',    SLIDE_THEME.colors.bgSecondary);
     root.setProperty('--bg-tertiary',     SLIDE_THEME.colors.bgTertiary);
@@ -134,9 +157,175 @@ function applyCSSVariables() {
     root.setProperty('--success-text',    SLIDE_THEME.colors.successText);
     root.setProperty('--error-bg',        SLIDE_THEME.colors.errorBg);
     root.setProperty('--error-text',      SLIDE_THEME.colors.errorText);
+    root.setProperty('--font-heading',    SLIDE_THEME.fonts.heading);
+    root.setProperty('--font-body',       SLIDE_THEME.fonts.body);
+}
+
+async function readPresentationTheme() {
+    if (state.isWeb) {
+        // getFileAsync(FileType.Compressed) is not supported in PowerPoint for the web.
+        // Apply CSS variables from the current SLIDE_THEME defaults and return.
+        console.log('[Theme] Web platform — skipping file read, using default theme.');
+        applyCSSVariables();
+        return;
+    }
+    console.log('[Theme] Reading presentation theme from file...');
+    try {
+        const theme = await readThemeFromFile();
+        console.log('[Theme] Raw parsed theme:', theme);
+
+        SLIDE_THEME.colors.title      = theme.accent1 || SLIDE_THEME.colors.title;
+        SLIDE_THEME.colors.accent2    = theme.accent2 || SLIDE_THEME.colors.accent2;
+        SLIDE_THEME.colors.accent3    = theme.accent3 || SLIDE_THEME.colors.accent3;
+        SLIDE_THEME.colors.accent4    = theme.accent4 || SLIDE_THEME.colors.accent4;
+        SLIDE_THEME.colors.accent5    = theme.accent5 || SLIDE_THEME.colors.accent5;
+        SLIDE_THEME.colors.accent6    = theme.accent6 || SLIDE_THEME.colors.accent6;
+        SLIDE_THEME.colors.content    = theme.dark1   || SLIDE_THEME.colors.content;
+        SLIDE_THEME.colors.subtitle   = theme.dark2   || SLIDE_THEME.colors.subtitle;
+        SLIDE_THEME.colors.bgSlide    = theme.light1  || SLIDE_THEME.colors.bgSlide;
+        SLIDE_THEME.colors.bgSlideAlt = theme.light2  || SLIDE_THEME.colors.bgSlideAlt;
+
+        SLIDE_THEME.fonts.heading = theme.majorFont || SLIDE_THEME.fonts.heading;
+        SLIDE_THEME.fonts.body    = theme.minorFont || SLIDE_THEME.fonts.body;
+
+        console.log('[Theme] Applied theme — colors:', {
+            title: SLIDE_THEME.colors.title,
+            content: SLIDE_THEME.colors.content,
+            subtitle: SLIDE_THEME.colors.subtitle,
+            bgSlide: SLIDE_THEME.colors.bgSlide,
+        }, 'fonts:', SLIDE_THEME.fonts);
+
+        applyCSSVariables();
+        console.log('[Theme] CSS variables updated.');
+    } catch (err) {
+        console.warn('[Theme] Could not read presentation theme, using defaults:', err);
+    }
+}
+
+// Office JS returns slice data as a plain number array on Win32, ArrayBuffer elsewhere.
+function toUint8Array(data) {
+    if (data instanceof Uint8Array) return data;
+    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    if (Array.isArray(data)) return new Uint8Array(data);
+    if (typeof data === 'string') {
+        const binary = atob(data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes;
+    }
+    throw new Error(`Unexpected slice data type: ${Object.prototype.toString.call(data)}`);
+}
+
+// Reads the PPTX file via Office API, extracts ppt/theme/theme1.xml from the ZIP,
+// and parses both the color scheme and font scheme from it. Both getThemeColorsAsync
+// and getThemeFontsAsync are not implemented in current PowerPoint builds.
+async function readThemeFromFile() {
+    return new Promise((resolve, reject) => {
+        console.log('[Theme] Requesting compressed PPTX file from Office...');
+        Office.context.document.getFileAsync(
+            Office.FileType.Compressed,
+            { sliceSize: 65536 },
+            async (result) => {
+                if (result.status === Office.AsyncResultStatus.Failed) {
+                    console.error('[Theme] getFileAsync failed:', result.error);
+                    reject(result.error);
+                    return;
+                }
+                try {
+                    const file = result.value;
+                    console.log(`[Theme] File opened — ${file.sliceCount} slice(s) to read.`);
+                    const slices = [];
+
+                    for (let i = 0; i < file.sliceCount; i++) {
+                        const data = await new Promise((res, rej) => {
+                            file.getSliceAsync(i, r => {
+                                if (r.status === Office.AsyncResultStatus.Succeeded) res(r.value.data);
+                                else rej(r.error);
+                            });
+                        });
+                        // Win32 desktop returns a plain number array, not ArrayBuffer — normalize here
+                        slices.push(toUint8Array(data));
+                    }
+                    file.closeAsync();
+
+                    const totalLength = slices.reduce((sum, s) => sum + s.length, 0);
+                    console.log(`[Theme] File read — total ${(totalLength / 1024).toFixed(1)} KB across ${slices.length} slice(s).`);
+
+                    const combined = new Uint8Array(totalLength);
+                    let offset = 0;
+                    for (const slice of slices) {
+                        combined.set(slice, offset);
+                        offset += slice.length;
+                    }
+
+                    const zip = await JSZip.loadAsync(combined);
+                    const themeEntry = zip.file('ppt/theme/theme1.xml');
+                    if (!themeEntry) {
+                        console.warn('[Theme] ppt/theme/theme1.xml not found in ZIP.');
+                        resolve({});
+                        return;
+                    }
+
+                    const xml = await themeEntry.async('string');
+                    console.log(`[Theme] theme1.xml extracted (${xml.length} chars).`);
+                    resolve(parseThemeXml(xml));
+                } catch (err) {
+                    console.error('[Theme] Error processing PPTX ZIP:', err);
+                    reject(err);
+                }
+            }
+        );
+    });
+}
+
+// Extracts colors and fonts from OOXML theme XML.
+// Colors: handles both <a:srgbClr val="RRGGBB"> and <a:sysClr lastClr="RRGGBB">.
+// Fonts: reads <a:latin typeface="..."> inside majorFont and minorFont sections.
+function parseThemeXml(xml) {
+    // Two-step: first extract the element's inner content, then search within it.
+    // This prevents the non-greedy [\s\S]*? from crossing element boundaries when
+    // an element uses sysClr (no srgbClr) and the next element happens to have one.
+    const extractColor = (tag) => {
+        const elem = new RegExp(`<a:${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</a:${tag}>`, 'i').exec(xml);
+        if (!elem) return null;
+        const inner = elem[1];
+        const srgb = /<a:srgbClr val="([0-9a-fA-F]{6})"/i.exec(inner);
+        if (srgb) return '#' + srgb[1];
+        const sys = /<a:sysClr[^>]*lastClr="([0-9a-fA-F]{6})"/i.exec(inner);
+        if (sys) return '#' + sys[1];
+        return null;
+    };
+
+    const extractFont = (section) => {
+        const elem = new RegExp(`<a:${section}(?:\\s[^>]*)?>([\\s\\S]*?)</a:${section}>`, 'i').exec(xml);
+        if (!elem) return null;
+        const match = /<a:latin typeface="([^"]+)"/i.exec(elem[1]);
+        return match ? match[1] : null;
+    };
+
+    const result = {
+        dark1:     extractColor('dk1'),
+        light1:    extractColor('lt1'),
+        dark2:     extractColor('dk2'),
+        light2:    extractColor('lt2'),
+        accent1:   extractColor('accent1'),
+        accent2:   extractColor('accent2'),
+        accent3:   extractColor('accent3'),
+        accent4:   extractColor('accent4'),
+        accent5:   extractColor('accent5'),
+        accent6:   extractColor('accent6'),
+        majorFont: extractFont('majorFont'),
+        minorFont: extractFont('minorFont'),
+    };
+
+    const missing = Object.entries(result).filter(([, v]) => v === null).map(([k]) => k);
+    if (missing.length) console.warn('[Theme] Could not extract from XML:', missing.join(', '));
+
+    return result;
 }
 
 function initializeTaskpane() {
+    console.log('[Init] Taskpane initializing. Default theme colors:', SLIDE_THEME.colors.title, '| fonts:', SLIDE_THEME.fonts);
     applyCSSVariables();
 
     // Cache DOM elements
@@ -156,7 +345,17 @@ function initializeTaskpane() {
         saveSettingsBtn: document.getElementById('saveSettingsBtn'),
         settingsLanguage: document.getElementById('settingsLanguage'),
         settingsLevel: document.getElementById('settingsLevel'),
-        settingsAgeGroup: document.getElementById('settingsAgeGroup')
+        settingsAgeGroup: document.getElementById('settingsAgeGroup'),
+        feedbackBtn: document.getElementById('feedbackBtn'),
+        feedbackModal: document.getElementById('feedbackModal'),
+        closeFeedbackModalBtn: document.getElementById('closeFeedbackModalBtn'),
+        cancelFeedbackBtn: document.getElementById('cancelFeedbackBtn'),
+        submitFeedbackBtn: document.getElementById('submitFeedbackBtn'),
+        feedbackComment: document.getElementById('feedbackComment'),
+        feedbackErrorContext: document.getElementById('feedbackErrorContext'),
+        starRating: document.getElementById('starRating'),
+        npsWidget: document.getElementById('npsWidget'),
+        npsStarRating: document.getElementById('npsStarRating')
     };
 
     loadSettings();
@@ -167,7 +366,10 @@ function initializeTaskpane() {
         connectWebSocket();
     }, 500);
 
-    console.log('Taskpane initialized');
+    // Show NPS if threshold already met from previous sessions
+    setTimeout(() => checkAndShowNPS(), 800);
+
+    console.log('[Init] Taskpane ready.');
 }
 
 function setupEventListeners() {
@@ -213,6 +415,26 @@ function setupEventListeners() {
 
     // Global keyboard shortcuts
     document.addEventListener('keydown', handleGlobalKeydown);
+
+    // Feedback modal
+    const { feedbackBtn, feedbackModal, closeFeedbackModalBtn, cancelFeedbackBtn, submitFeedbackBtn, starRating } = state.elements;
+    feedbackBtn.addEventListener('click', () => openFeedbackModal());
+    closeFeedbackModalBtn.addEventListener('click', closeFeedbackModal);
+    cancelFeedbackBtn.addEventListener('click', closeFeedbackModal);
+    submitFeedbackBtn.addEventListener('click', submitFeedbackModal);
+    feedbackModal.addEventListener('click', (e) => {
+        if (e.target === feedbackModal) closeFeedbackModal();
+    });
+
+    starRating.querySelectorAll('.star').forEach(star => {
+        star.addEventListener('click', () => {
+            selectedStarRating = parseInt(star.dataset.val);
+            starRating.querySelectorAll('.star').forEach((s, i) => {
+                s.classList.toggle('active', i < selectedStarRating);
+            });
+            state.elements.submitFeedbackBtn.disabled = false;
+        });
+    });
 }
 
 // ============================================
@@ -361,6 +583,8 @@ function handleNewChat() {
     chatBody.innerHTML = '';
     chatBody.appendChild(welcomeState);
     welcomeState.classList.remove('hidden');
+
+    checkAndShowNPS();
 }
 
 // ============================================
@@ -393,11 +617,7 @@ function connectWebSocket() {
     };
 
     state.ws.onmessage = (event) => {
-        try {
-            handleWebSocketMessage(event.data);
-        } catch (error) {
-            console.error('Error handling WebSocket message:', error);
-        }
+        handleWebSocketMessage(event.data);
     };
 
     state.ws.onclose = (event) => {
@@ -465,7 +685,7 @@ function sendWebSocketMessage(message) {
     }
 }
 
-function handleWebSocketMessage(data) {
+async function handleWebSocketMessage(data) {
     try {
         const message = JSON.parse(data);
 
@@ -526,8 +746,11 @@ function handleWebSocketMessage(data) {
 
         // NEW — Handle unified conversation response (slide-title + content schema)
         if (message.slides) {
+            console.log(`[WS] Received ${message.slides.length} slide(s) from backend. Title: "${message.title}"`);
             const slides = transformConversationResponse(message);
             if (slides && slides.length > 0) {
+                console.log(`[WS] Transformed to ${slides.length} slide(s) for preview.`);
+                await readPresentationTheme();
                 showSlidePreview(slides, message.title || 'Generated Content');
                 // Store the full JSON in history so GPT knows what it generated in the next turn,
                 // but do NOT display it — the slide preview is the only UI feedback needed.
@@ -1085,7 +1308,10 @@ async function insertAllSlides() {
         return;
     }
 
+    await readPresentationTheme();
+
     const slidesToInsert = [...state.slides];
+    console.log(`[Insert] Inserting ${slidesToInsert.length} slide(s). Mode: ${state.isWeb ? 'web (PptxGenJS)' : 'desktop (Office API)'}`);
 
     if (state.isEditMode) exitEditMode();
     hidePreviewArea();
@@ -1144,13 +1370,16 @@ async function insertAllSlides() {
             });
         }
 
+        console.log(`[Insert] Done — ${slidesToInsert.length} slide(s) inserted successfully.`);
         hideProgress();
         showSuccess(`${slidesToInsert.length} slide${slidesToInsert.length !== 1 ? 's' : ''} inserted successfully`);
+        const fbStats = getFeedbackStats();
+        saveFeedbackStats({ ...fbStats, insertCount: fbStats.insertCount + 1 });
         setProcessing(false);
         state.messages = [];
         state.conversationId = null;
     } catch (error) {
-        console.error('Error inserting slides:', error);
+        console.error('[Insert] Error inserting slides:', error);
         hideProgress();
         showError(`Failed to insert slides: ${error.message}`);
         setProcessing(false);
@@ -1159,6 +1388,7 @@ async function insertAllSlides() {
 
 async function createSlideContent(slide, slideData, context) {
     const isTitle = slideData.type === 'Title';
+    console.log(`[Insert] createSlideContent — type: ${slideData.type}, title color: ${SLIDE_THEME.colors.title}, content color: ${SLIDE_THEME.colors.content}, font: ${SLIDE_THEME.fonts.heading}`);
 
     // Title
     const titleShape = slide.shapes.addTextBox(slideData.title || '');
@@ -1168,6 +1398,7 @@ async function createSlideContent(slide, slideData, context) {
     titleShape.height = isTitle ? 80 : 60;
     await context.sync();
 
+    titleShape.textFrame.textRange.font.name = SLIDE_THEME.fonts.heading;
     titleShape.textFrame.textRange.font.bold = true;
     titleShape.textFrame.textRange.font.size = isTitle ? 44 : 32;
     titleShape.textFrame.textRange.font.color = SLIDE_THEME.colors.title;
@@ -1183,6 +1414,7 @@ async function createSlideContent(slide, slideData, context) {
         subtitleShape.height = 40;
         await context.sync();
 
+        subtitleShape.textFrame.textRange.font.name = SLIDE_THEME.fonts.body;
         subtitleShape.textFrame.textRange.font.size = isTitle ? 24 : 20;
         subtitleShape.textFrame.textRange.font.color = SLIDE_THEME.colors.subtitle;
         if (isTitle) subtitleShape.textFrame.horizontalAlignment = 'Center';
@@ -1198,6 +1430,7 @@ async function createSlideContent(slide, slideData, context) {
         contentShape.height = 100;
         await context.sync();
 
+        contentShape.textFrame.textRange.font.name = SLIDE_THEME.fonts.body;
         contentShape.textFrame.textRange.font.size = 18;
         contentShape.textFrame.textRange.font.color = SLIDE_THEME.colors.content;
         await context.sync();
@@ -1212,6 +1445,7 @@ async function createSlideContent(slide, slideData, context) {
         exampleShape.height = 60;
         await context.sync();
 
+        exampleShape.textFrame.textRange.font.name = SLIDE_THEME.fonts.body;
         exampleShape.textFrame.textRange.font.size = 16;
         exampleShape.textFrame.textRange.font.italic = true;
         exampleShape.textFrame.textRange.font.color = SLIDE_THEME.colors.subtitle;
@@ -1234,6 +1468,7 @@ async function buildPptxBase64(slides) {
             w: pt(620), h: pt(isTitle ? 80 : 60),
             fontSize: isTitle ? 44 : 32,
             bold: true,
+            fontFace: SLIDE_THEME.fonts.heading,
             color: c(SLIDE_THEME.colors.title),
             align: isTitle ? 'center' : 'left',
             wrap: true,
@@ -1245,6 +1480,7 @@ async function buildPptxBase64(slides) {
                 x: pt(50), y: pt(isTitle ? 270 : 100),
                 w: pt(620), h: pt(40),
                 fontSize: isTitle ? 24 : 20,
+                fontFace: SLIDE_THEME.fonts.body,
                 color: c(SLIDE_THEME.colors.subtitle),
                 align: isTitle ? 'center' : 'left',
                 wrap: true,
@@ -1257,6 +1493,7 @@ async function buildPptxBase64(slides) {
                 x: pt(50), y: pt(160),
                 w: pt(620), h: pt(100),
                 fontSize: 18,
+                fontFace: SLIDE_THEME.fonts.body,
                 color: c(SLIDE_THEME.colors.content),
                 wrap: true,
             });
@@ -1269,6 +1506,7 @@ async function buildPptxBase64(slides) {
                 w: pt(620), h: pt(60),
                 fontSize: 16,
                 italic: true,
+                fontFace: SLIDE_THEME.fonts.body,
                 color: c(SLIDE_THEME.colors.subtitle),
                 wrap: true,
             });
@@ -1288,6 +1526,19 @@ function showSuccess(message) {
     const clone = template.content.cloneNode(true);
     const successEl = clone.querySelector('.message-success');
     successEl.querySelector('.success-text').textContent = message;
+
+    const thumbsRow = document.createElement('div');
+    thumbsRow.className = 'feedback-thumbs';
+    thumbsRow.innerHTML = `
+        <span class="feedback-prompt">Was this helpful?</span>
+        <button class="thumb-btn" data-val="up" title="Yes">👍</button>
+        <button class="thumb-btn" data-val="down" title="No">👎</button>
+    `;
+    successEl.appendChild(thumbsRow);
+    thumbsRow.querySelectorAll('.thumb-btn').forEach(btn => {
+        btn.addEventListener('click', () => handleThumbsFeedback(btn.dataset.val, thumbsRow));
+    });
+
     appendToChatBody(successEl);
 }
 
@@ -1297,6 +1548,13 @@ function showError(message) {
     const clone = template.content.cloneNode(true);
     const errorEl = clone.querySelector('.message-error');
     errorEl.querySelector('.error-text').textContent = message;
+
+    const feedbackLink = document.createElement('button');
+    feedbackLink.className = 'feedback-error-link';
+    feedbackLink.textContent = 'Tell us what happened →';
+    feedbackLink.addEventListener('click', () => openFeedbackModal({ errorMessage: message }));
+    errorEl.appendChild(feedbackLink);
+
     appendToChatBody(errorEl);
 }
 
@@ -1429,6 +1687,128 @@ function updateContextBadge() {
     if (contextBadge) {
         contextBadge.textContent = `${state.settings.level} ${state.settings.language}`;
     }
+}
+
+// ============================================
+// FEEDBACK
+// ============================================
+
+async function sendFeedback(data) {
+    try {
+        await fetch(`${API_URL}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ...data,
+                settings: state.settings,
+                timestamp: new Date().toISOString()
+            })
+        });
+    } catch (_) { /* silent — feedback is non-critical */ }
+}
+
+function getFeedbackStats() {
+    try {
+        return JSON.parse(localStorage.getItem('teachersCenterFeedbackStats'))
+            || { insertCount: 0, lastPromptedAt: null, neverAsk: false };
+    } catch (_) {
+        return { insertCount: 0, lastPromptedAt: null, neverAsk: false };
+    }
+}
+
+function saveFeedbackStats(stats) {
+    localStorage.setItem('teachersCenterFeedbackStats', JSON.stringify(stats));
+}
+
+function handleThumbsFeedback(val, container) {
+    if (val === 'up') {
+        sendFeedback({ type: 'success-rating', rating: 'up' });
+        container.innerHTML = '<span class="feedback-thanks">Thanks! 🙏</span>';
+    } else {
+        container.innerHTML = `
+            <textarea class="feedback-inline-text" placeholder="What could be better? (optional)" rows="2"></textarea>
+            <div class="feedback-inline-actions">
+                <button class="feedback-send-btn">Send</button>
+                <button class="feedback-skip-btn">Skip</button>
+            </div>`;
+        container.querySelector('.feedback-send-btn').addEventListener('click', () => {
+            const comment = container.querySelector('.feedback-inline-text').value;
+            sendFeedback({ type: 'success-rating', rating: 'down', comment });
+            container.innerHTML = '<span class="feedback-thanks">Thanks for the feedback! 🙏</span>';
+        });
+        container.querySelector('.feedback-skip-btn').addEventListener('click', () => {
+            container.remove();
+        });
+    }
+}
+
+function openFeedbackModal(context) {
+    selectedStarRating = 0;
+    state.elements.feedbackComment.value = '';
+    state.elements.submitFeedbackBtn.disabled = true;
+    state.elements.starRating.querySelectorAll('.star').forEach(s => s.classList.remove('active'));
+
+    if (context?.errorMessage) {
+        state.elements.feedbackErrorContext.textContent = `Error context: ${context.errorMessage}`;
+        state.elements.feedbackErrorContext.classList.remove('hidden');
+        state.elements.feedbackErrorContext.dataset.errorMessage = context.errorMessage;
+    } else {
+        state.elements.feedbackErrorContext.classList.add('hidden');
+        delete state.elements.feedbackErrorContext.dataset.errorMessage;
+    }
+    state.elements.feedbackModal.classList.remove('hidden');
+}
+
+function closeFeedbackModal() {
+    state.elements.feedbackModal.classList.add('hidden');
+}
+
+function submitFeedbackModal() {
+    const comment = state.elements.feedbackComment.value.trim();
+    const errorMessage = state.elements.feedbackErrorContext.dataset.errorMessage;
+    sendFeedback({
+        type: errorMessage ? 'error-feedback' : 'manual-feedback',
+        rating: selectedStarRating,
+        comment,
+        ...(errorMessage && { errorContext: errorMessage })
+    });
+    closeFeedbackModal();
+}
+
+function checkAndShowNPS() {
+    const stats = getFeedbackStats();
+    if (stats.neverAsk) return;
+    if (stats.insertCount < 5) return;
+
+    const now = Date.now();
+    const fourteenDays = 14 * 24 * 60 * 60 * 1000;
+    if (stats.lastPromptedAt && (now - stats.lastPromptedAt) < fourteenDays) return;
+
+    const { npsWidget, npsStarRating } = state.elements;
+    if (!npsWidget.classList.contains('hidden')) return; // already showing, don't re-attach listeners
+    npsWidget.classList.remove('hidden');
+
+    npsStarRating.querySelectorAll('.star').forEach(star => {
+        star.addEventListener('click', () => {
+            const rating = parseInt(star.dataset.val);
+            npsStarRating.querySelectorAll('.star').forEach((s, i) => {
+                s.classList.toggle('active', i < rating);
+            });
+            sendFeedback({ type: 'nps', rating });
+            saveFeedbackStats({ ...getFeedbackStats(), lastPromptedAt: now });
+            npsWidget.innerHTML = '<span class="feedback-thanks" style="display:block;text-align:center;padding:8px 0;">Thanks for rating! 🙏</span>';
+            setTimeout(() => npsWidget.classList.add('hidden'), 2500);
+        }, { once: true });
+    });
+
+    document.getElementById('npsDismissBtn').addEventListener('click', () => {
+        npsWidget.classList.add('hidden');
+    }, { once: true });
+
+    document.getElementById('npsNeverBtn').addEventListener('click', () => {
+        saveFeedbackStats({ ...getFeedbackStats(), neverAsk: true });
+        npsWidget.classList.add('hidden');
+    }, { once: true });
 }
 
 // ============================================

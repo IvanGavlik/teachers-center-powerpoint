@@ -42,6 +42,9 @@
                 <span class="context-badge" id="contextBadge" title="Click to change settings">B1 English</span>
             </div>
             <div class="header-actions">
+                <button class="icon-btn" id="feedbackBtn" title="Give Feedback">
+                    <span class="material-icons">thumbs_up_down</span>
+                </button>
                 <button class="icon-btn" id="newChatBtn" title="New Chat">
                     <span class="material-icons">add_comment</span>
                 </button>
@@ -59,6 +62,20 @@
                 <p class="welcome-subtitle">
                     Describe your lesson content and I'll generate slides for you.
                 </p>
+                <div class="nps-widget hidden" id="npsWidget">
+                    <p class="nps-question">How's Teacher Assistant working for you?</p>
+                    <div class="star-rating" id="npsStarRating">
+                        <span class="star" data-val="1">★</span>
+                        <span class="star" data-val="2">★</span>
+                        <span class="star" data-val="3">★</span>
+                        <span class="star" data-val="4">★</span>
+                        <span class="star" data-val="5">★</span>
+                    </div>
+                    <div class="nps-actions">
+                        <button class="nps-dismiss" id="npsDismissBtn">Not now</button>
+                        <button class="nps-never" id="npsNeverBtn">Don't ask again</button>
+                    </div>
+                </div>
             </div>
 
             <!-- Messages will be dynamically inserted here -->
@@ -161,6 +178,40 @@
                 <span class="error-text"></span>
             </div>
         </template>
+
+        <!-- Feedback Modal -->
+        <div class="modal-overlay hidden" id="feedbackModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Share Feedback</h3>
+                    <button class="modal-close" id="closeFeedbackModalBtn">
+                        <span class="material-icons">close</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="settings-group">
+                        <label>How would you rate your experience?</label>
+                        <div class="star-rating" id="starRating">
+                            <span class="star" data-val="1">★</span>
+                            <span class="star" data-val="2">★</span>
+                            <span class="star" data-val="3">★</span>
+                            <span class="star" data-val="4">★</span>
+                            <span class="star" data-val="5">★</span>
+                        </div>
+                    </div>
+                    <div class="settings-group">
+                        <label for="feedbackComment">Comments (optional)</label>
+                        <textarea id="feedbackComment" rows="3"
+                            placeholder="Tell us what's working well or what could be better..."></textarea>
+                    </div>
+                    <div id="feedbackErrorContext" class="feedback-error-context hidden"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" id="cancelFeedbackBtn">Cancel</button>
+                    <button class="btn btn-primary" id="submitFeedbackBtn" disabled>Send</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Settings Modal -->
         <div class="modal-overlay hidden" id="settingsModal">

@@ -8,9 +8,18 @@
 
 :root {
     /* Static fallbacks — overridden at runtime by SLIDE_THEME in taskpane.js.
-       To change colors, update SLIDE_THEME in taskpane.js only.
+       To change colors/fonts, update SLIDE_THEME in taskpane.js only.
        These values are kept as a safety net if JS fails to initialize. */
+    --font-heading: 'Calibri Light';
+    --font-body: 'Calibri';
+    --bg-slide: #ffffff;
+    --bg-slide-alt: #f3f2f1;
     --accent-primary: #d13438;
+    --accent-2: #ed7d31;
+    --accent-3: #a5a5a5;
+    --accent-4: #ffc000;
+    --accent-5: #5b9bd5;
+    --accent-6: #70ad47;
     --accent-hover: #b7472a;
     --accent-light: #fdf3f3;
 
@@ -322,7 +331,7 @@ body {
 }
 
 .slide-card {
-    background: var(--bg-primary);
+    background: var(--bg-slide);
     border: 1px solid var(--border-light);
     border-radius: var(--radius-md);
     padding: var(--spacing-sm);
@@ -337,6 +346,7 @@ body {
 }
 
 .slide-card-title {
+    font-family: var(--font-heading), 'Segoe UI', sans-serif;
     font-size: 14px;
     font-weight: 600;
     color: var(--accent-primary);
@@ -345,12 +355,14 @@ body {
 }
 
 .slide-card-subtitle {
+    font-family: var(--font-body), 'Segoe UI', sans-serif;
     font-size: 11px;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     margin-bottom: var(--spacing-xs);
 }
 
 .slide-card-content {
+    font-family: var(--font-body), 'Segoe UI', sans-serif;
     flex: 1;
     font-size: 12px;
     color: var(--text-primary);
@@ -360,6 +372,7 @@ body {
 }
 
 .slide-card-example {
+    font-family: var(--font-body), 'Segoe UI', sans-serif;
     margin-top: var(--spacing-xs);
     padding: var(--spacing-xs);
     background: var(--bg-secondary);
@@ -447,6 +460,7 @@ body {
     align-self: flex-start;
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: var(--spacing-sm);
     padding: var(--spacing-sm) var(--spacing-md);
     background: var(--success-bg);
@@ -893,4 +907,213 @@ textarea:focus-visible {
     background-color: var(--accent-hover);
     border-color: var(--accent-hover);
     box-shadow: var(--shadow-md);
+}
+
+/* ============================================
+   FEEDBACK — Inline thumbs (Option 1 — success message)
+   ============================================ */
+.feedback-thumbs {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    flex-wrap: wrap;
+    flex: 0 0 100%;
+}
+
+.feedback-prompt {
+    font-size: 11px;
+    color: var(--success-text);
+    opacity: 0.8;
+}
+
+.thumb-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 4px;
+    border-radius: var(--radius-sm);
+    transition: transform 0.15s;
+    line-height: 1;
+}
+
+.thumb-btn:hover {
+    transform: scale(1.2);
+}
+
+.feedback-inline-text {
+    width: 100%;
+    margin-top: var(--spacing-xs);
+    font-family: inherit;
+    font-size: 12px;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--border-medium);
+    border-radius: var(--radius-sm);
+    resize: none;
+    box-sizing: border-box;
+}
+
+.feedback-inline-actions {
+    display: flex;
+    gap: var(--spacing-xs);
+    margin-top: var(--spacing-xs);
+}
+
+.feedback-send-btn,
+.feedback-skip-btn {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    border: 1px solid var(--border-medium);
+    background: white;
+    font-family: inherit;
+}
+
+.feedback-send-btn {
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+}
+
+.feedback-send-btn:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+}
+
+.feedback-thanks {
+    font-size: 11px;
+    color: var(--success-text);
+    opacity: 0.9;
+    display: block;
+    margin-top: var(--spacing-xs);
+}
+
+/* ============================================
+   FEEDBACK — Star rating (modal + NPS)
+   ============================================ */
+.star-rating {
+    display: flex;
+    gap: 4px;
+    margin-top: var(--spacing-xs);
+}
+
+.star {
+    font-size: 28px;
+    color: var(--border-medium);
+    cursor: pointer;
+    transition: color 0.15s, transform 0.1s;
+    user-select: none;
+    line-height: 1;
+}
+
+.star:hover,
+.star.active {
+    color: #ffc000;
+}
+
+.star:hover {
+    transform: scale(1.1);
+}
+
+/* ============================================
+   FEEDBACK — Feedback textarea in modal
+   ============================================ */
+#feedbackComment {
+    width: 100%;
+    font-family: inherit;
+    font-size: 13px;
+    padding: var(--spacing-sm);
+    border: 1px solid var(--border-medium);
+    border-radius: var(--radius-sm);
+    resize: none;
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+}
+
+#feedbackComment:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    border-width: 2px;
+}
+
+.feedback-error-context {
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding: 6px 8px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    border-left: 2px solid var(--border-medium);
+}
+
+/* ============================================
+   FEEDBACK — Error link (Option 4)
+   ============================================ */
+.feedback-error-link {
+    display: inline-block;
+    margin-top: var(--spacing-xs);
+    background: none;
+    border: none;
+    color: var(--error-text);
+    font-size: 11px;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+    opacity: 0.75;
+    font-family: inherit;
+}
+
+.feedback-error-link:hover {
+    opacity: 1;
+}
+
+/* ============================================
+   FEEDBACK — NPS widget in welcome screen (Option 3)
+   ============================================ */
+.nps-widget {
+    margin-top: var(--spacing-lg);
+    padding: var(--spacing-md);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    text-align: center;
+    width: 100%;
+    animation: fadeIn 0.3s ease;
+}
+
+.nps-question {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-sm);
+}
+
+.nps-widget .star-rating {
+    justify-content: center;
+}
+
+.nps-widget .star {
+    font-size: 24px;
+}
+
+.nps-actions {
+    display: flex;
+    justify-content: center;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-sm);
+}
+
+.nps-dismiss,
+.nps-never {
+    background: none;
+    border: none;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    text-decoration: underline;
+    font-family: inherit;
+}
+
+.nps-dismiss:hover,
+.nps-never:hover {
+    color: var(--text-secondary);
 }
