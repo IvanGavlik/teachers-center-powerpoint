@@ -84,9 +84,6 @@ const state = {
     // Deduplication
     lastMessageId: null,
 
-    // Type selection
-    selectedType: 'vocabulary',
-
     // Settings
     settingsConfirmed: false,
     settings: {
@@ -438,55 +435,6 @@ function setupEventListeners() {
 }
 
 // ============================================
-// TYPE SELECTION
-// ============================================
-
-function selectType(btn) {
-    const { typeOptions, messageInput } = state.elements;
-    const type = btn.dataset.type;
-    const placeholder = btn.dataset.placeholder || 'Type your request...';
-
-    typeOptions.querySelectorAll('.type-option').forEach(opt => opt.classList.remove('selected'));
-    btn.classList.add('selected');
-    state.selectedType = type;
-    messageInput.placeholder = placeholder;
-    clearTypeValidationError();
-    messageInput.focus();
-}
-
-function resetTypeSelection() {
-    const { typeOptions, messageInput } = state.elements;
-    typeOptions.querySelectorAll('.type-option').forEach(opt => opt.classList.remove('selected'));
-    const defaultBtn = typeOptions.querySelector('[data-type="vocabulary"]');
-    if (defaultBtn) {
-        defaultBtn.classList.add('selected');
-        state.selectedType = 'vocabulary';
-        messageInput.placeholder = defaultBtn.dataset.placeholder || 'Type your request...';
-    }
-    clearTypeValidationError();
-}
-
-function showTypeValidationError() {
-    const { typeError, inputContainer } = state.elements;
-    typeError.classList.remove('hidden');
-    inputContainer.classList.add('validation-error');
-}
-
-function clearTypeValidationError() {
-    const { typeError, inputContainer } = state.elements;
-    typeError.classList.add('hidden');
-    inputContainer.classList.remove('validation-error');
-}
-
-function validateTypeSelection() {
-    if (!state.selectedType) {
-        showTypeValidationError();
-        return false;
-    }
-    return true;
-}
-
-// ============================================
 // MESSAGE HANDLING
 // ============================================
 
@@ -505,8 +453,6 @@ function handleSend() {
         handleEditSend(content);
         return;
     }
-
-    // if (!validateTypeSelection()) return;
 
     // Dismiss existing preview
     if (state.isInPreviewMode && state.slides.length > 0) {
@@ -527,7 +473,7 @@ function handleSend() {
     state.originalRequest = content;
 
     const sent = sendWebSocketMessage({
-        type: state.selectedType,
+        type: 'conversation',
         content: content
     });
 
@@ -722,7 +668,7 @@ async function handleWebSocketMessage(data) {
         if (message.type === 'edit' && message.edit) {
             const slideIndex = message.edit.slideIndex;
             const existingSlide = state.slides[slideIndex];
-            const transformedSlide = transformEditedSlide(message.edit.slide, state.selectedType, existingSlide);
+            const transformedSlide = transformEditedSlide(message.edit.slide, 'conversation', existingSlide);
 
             if (transformedSlide && slideIndex >= 0 && slideIndex < state.slides.length) {
                 state.slides[slideIndex] = transformedSlide;
