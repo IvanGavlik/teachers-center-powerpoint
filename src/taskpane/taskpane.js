@@ -62,7 +62,6 @@ const SLIDE_THEME = {
 
 const state = {
     // Chat state
-    messages: [],
     isProcessing: false,
     pendingRequest: null,
 
@@ -81,8 +80,6 @@ const state = {
     cancelled: false,
     staleResponses: 0,
 
-    // Deduplication
-    lastMessageId: null,
 
     // Settings
     settingsConfirmed: false,
@@ -460,7 +457,6 @@ function handleSend() {
         dismissPreview(`${count} slide${count !== 1 ? 's' : ''} not inserted`);
     }
 
-    state.lastMessageId = null;
     state.cancelled = false;
     state.elements.welcomeState.classList.add('hidden');
 
@@ -492,7 +488,6 @@ function handleEditSend(editInstruction) {
     const messageEl = clone.querySelector('.message-user');
     messageEl.textContent = messageContent;
     insertBeforePreview(messageEl);
-    state.messages.push({ type: 'user', content: messageContent });
 
     messageInput.value = '';
     messageInput.style.height = 'auto';
@@ -514,7 +509,6 @@ function handleEditSend(editInstruction) {
 }
 
 function handleNewChat() {
-    state.messages = [];
     state.pendingRequest = null;
     state.currentSlideIndex = 0;
     setProcessing(false);
@@ -598,10 +592,6 @@ function sendWebSocketMessage(message) {
     }
 
     try {
-        if (!state.conversationId) {
-            state.conversationId = `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        }
-
         const wsMessage = {
             'user-id': USER_ID,
             'channel-name': CHANNEL_NAME,
@@ -614,10 +604,6 @@ function sendWebSocketMessage(message) {
                 'native-language': 'No',
                 'age-group': state.settings.ageGroup || null
             },
-            // Send all history except the last entry — the current user message is already
-            // included in the backend prompt via {{request}}, so sending it in history too
-            // would give GPT two consecutive identical user messages and break the flow.
-            messages: state.messages.slice(0, -1),
             ...(message.edit && { edit: message.edit })
         };
 
@@ -642,12 +628,9 @@ async function handleWebSocketMessage(data) {
         }
 
         if (message['requirements-not-met']) {
+            state.conversationId = message['conversation-id'];
             hideProgress();
-            // Display the plain text question to the user, but store the full JSON in history.
-            // GPT is instructed to always respond with JSON. If we store only the extracted text,
-            // GPT sees its own previous responses as plain text and loses the JSON-only format,
-            // causing it to reply in plain text on the next turn — which crashes the backend parser.
-            addAIMessage(message['requirements-not-met'], JSON.stringify(message));
+            addAIMessage(message['requirements-not-met']);
             setProcessing(false);
             return;
         }
@@ -692,15 +675,13 @@ async function handleWebSocketMessage(data) {
 
         // NEW — Handle unified conversation response (slide-title + content schema)
         if (message.slides) {
+            state.conversationId = message['conversation-id'];
             console.log(`[WS] Received ${message.slides.length} slide(s) from backend. Title: "${message.title}"`);
             const slides = transformConversationResponse(message);
             if (slides && slides.length > 0) {
                 console.log(`[WS] Transformed to ${slides.length} slide(s) for preview.`);
                 await readPresentationTheme();
                 showSlidePreview(slides, message.title || 'Generated Content');
-                // Store the full JSON in history so GPT knows what it generated in the next turn,
-                // but do NOT display it — the slide preview is the only UI feedback needed.
-                state.messages.push({ type: 'ai', content: JSON.stringify({ title: message.title, slides: message.slides }) });
             } else {
                 showError('No slides generated. Please try a different request.');
                 setProcessing(false);
@@ -963,16 +944,14 @@ function addUserMessage(content) {
     const messageEl = clone.querySelector('.message-user');
     messageEl.textContent = content;
     appendToChatBody(messageEl);
-    state.messages.push({ type: 'user', content });
 }
 
-function addAIMessage(displayContent, historyContent = displayContent) {
+function addAIMessage(displayContent) {
     const template = document.getElementById('aiMessageTemplate');
     const clone = template.content.cloneNode(true);
     const messageEl = clone.querySelector('.message-ai');
     messageEl.textContent = displayContent;
     appendToChatBody(messageEl);
-    state.messages.push({ type: 'ai', content: historyContent });
 }
 
 // ============================================
@@ -1033,6 +1012,7 @@ function dismissPreview(message) {
     state.slides = [];
     state.previewElement = null;
     state.isInPreviewMode = false;
+    state.conversationId = null;
 }
 
 // ============================================
@@ -1322,7 +1302,6 @@ async function insertAllSlides() {
         const fbStats = getFeedbackStats();
         saveFeedbackStats({ ...fbStats, insertCount: fbStats.insertCount + 1 });
         setProcessing(false);
-        state.messages = [];
         state.conversationId = null;
     } catch (error) {
         console.error('[Insert] Error inserting slides:', error);
