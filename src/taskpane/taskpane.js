@@ -25,6 +25,19 @@ const COMMANDS = [
     { command: '/multiple-choice', description: 'Multiple choice quiz', icon: 'sports_esports', mode: 'multiple-choice' }
 ];
 
+const INTERACTIVITY_KEYWORDS = [
+    'multiple choice',
+    'mcq',
+    'quiz game',
+    'interactive quiz',
+    'make a quiz',
+    'create a quiz',
+    'quiz activity',
+    'class quiz',
+    'student quiz',
+    'practice quiz'
+];
+
 // ============================================
 // SLIDE THEME — single source of truth for colors used in
 // both the preview UI (injected as CSS vars) and slide insertion
@@ -100,7 +113,8 @@ const state = {
     isWeb: false,
 
     // Interactivity mode
-    interactivityMode: null,  // null | 'multiple-choice'
+    interactivityMode: null,          // null | 'multiple-choice'
+    pendingInteractivityRequest: null, // message stored while waiting for confirmation
 
     // WebSocket state
     ws: null,
@@ -474,11 +488,21 @@ function handleSend() {
     const content = messageInput.value.trim();
     if (!content || state.isProcessing) return;
 
-    // Interactivity command detection
+    // Interactivity command detection — Option 1: explicit /command
     if (content.toLowerCase().startsWith('/multiple-choice')) {
         messageInput.value = '';
         messageInput.style.height = 'auto';
         enterInteractivityMode('multiple-choice');
+        return;
+    }
+
+    // Interactivity keyword detection — Option 2: natural language
+    if (!state.interactivityMode && containsInteractivityKeyword(content)) {
+        messageInput.value = '';
+        messageInput.style.height = 'auto';
+        state.elements.welcomeState.classList.add('hidden');
+        addUserMessage(content);
+        showInteractivityConfirmation(content);
         return;
     }
 
@@ -553,6 +577,8 @@ function handleNewChat() {
     state.originalRequest = null;
     state.editingSlideIndex = null;
     state.isEditMode = false;
+    state.pendingInteractivityRequest = null;
+    exitInteractivityMode();
 
     hidePreviewArea();
 
@@ -1230,6 +1256,60 @@ function exitInteractivityMode() {
     state.interactivityMode = null;
     if (interactivityChip) interactivityChip.classList.add('hidden');
     if (messageInput) messageInput.placeholder = 'Type your request...';
+}
+
+// ── Interactivity keyword detection ──────────────────────────────────────────
+
+function containsInteractivityKeyword(text) {
+    const lower = text.toLowerCase();
+    return INTERACTIVITY_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+function showInteractivityConfirmation(originalMessage) {
+    state.pendingInteractivityRequest = originalMessage;
+
+    const template = document.getElementById('aiMessageTemplate');
+    const clone = template.content.cloneNode(true);
+    const messageEl = clone.querySelector('.message-ai');
+
+    messageEl.innerHTML = `
+        <div>🎮 This looks like an interactive activity.</div>
+        <div style="margin-top: 6px;">How would you like to proceed?</div>
+        <div class="interactivity-confirm-buttons">
+            <button class="interactivity-confirm-btn interactivity-confirm-yes">Make it interactive</button>
+            <button class="interactivity-confirm-btn interactivity-confirm-no">Create slides</button>
+        </div>
+    `;
+
+    messageEl.querySelector('.interactivity-confirm-yes').addEventListener('click', (e) => handleInteractivityConfirmYes(e, messageEl));
+    messageEl.querySelector('.interactivity-confirm-no').addEventListener('click', (e) => handleInteractivityConfirmNo(e, messageEl));
+
+    appendToChatBody(messageEl);
+}
+
+function handleInteractivityConfirmYes(e, messageEl) {
+    messageEl.textContent = '🎮 Multiple Choice Quiz';
+    const pending = state.pendingInteractivityRequest;
+    state.pendingInteractivityRequest = null;
+    enterInteractivityMode('multiple-choice');
+    if (pending) triggerSendWithContent(pending);
+}
+
+function handleInteractivityConfirmNo(e, messageEl) {
+    messageEl.textContent = '📄 Creating slides...';
+    const pending = state.pendingInteractivityRequest;
+    state.pendingInteractivityRequest = null;
+    if (pending) triggerSendWithContent(pending);
+}
+
+function triggerSendWithContent(content) {
+    state.cancelled = false;
+    setProcessing(true);
+    showProgressInPreviewArea('Generating content...');
+    state.originalRequest = content;
+
+    const sent = sendWebSocketMessage({ type: 'conversation', content });
+    if (!sent) connectWebSocket();
 }
 
 // ── Commands autocomplete ─────────────────────────────────────────────────────

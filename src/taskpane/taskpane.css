@@ -723,6 +723,44 @@ body {
     margin-left: auto;
 }
 
+.interactivity-confirm-buttons {
+    display: flex;
+    gap: var(--spacing-xs);
+    margin-top: var(--spacing-sm);
+}
+
+.interactivity-confirm-btn {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid;
+    transition: all 0.15s;
+}
+
+.interactivity-confirm-yes {
+    background: var(--accent-6);
+    border-color: var(--accent-6);
+    color: white;
+}
+
+.interactivity-confirm-yes:hover {
+    background: #5a9038;
+    border-color: #5a9038;
+}
+
+.interactivity-confirm-no {
+    background: transparent;
+    border-color: var(--border-light);
+    color: var(--text-secondary);
+}
+
+.interactivity-confirm-no:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
 .interactivity-chip {
     display: flex;
     align-items: center;
