@@ -493,6 +493,7 @@ body {
    INPUT FOOTER
    ============================================ */
 .input-footer {
+    position: relative;
     background: var(--bg-secondary);
     border-top: 1px solid var(--border-light);
     padding: var(--spacing-sm) var(--spacing-md);
@@ -671,6 +672,98 @@ body {
     margin-top: var(--spacing-xs);
     font-size: 10px;
     color: var(--text-tertiary);
+}
+
+.commands-autocomplete {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    z-index: 100;
+    margin: 0 var(--spacing-md) var(--spacing-xs);
+}
+
+.commands-autocomplete.hidden {
+    display: none;
+}
+
+.command-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.command-item:hover,
+.command-item.highlighted {
+    background: var(--accent-light);
+}
+
+.command-item .material-icons {
+    font-size: 16px;
+    color: var(--accent-6);
+}
+
+.command-item-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-6);
+}
+
+.command-item-desc {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-left: auto;
+}
+
+.interactivity-chip {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: #f0f7eb;
+    border: 1px solid var(--accent-6);
+    border-radius: var(--radius-md);
+    font-size: 11px;
+    color: var(--accent-6);
+    width: fit-content;
+    margin-top: var(--spacing-sm);
+    margin-bottom: var(--spacing-xs);
+}
+
+.interactivity-chip .material-icons {
+    color: var(--accent-6);
+    font-size: 14px;
+}
+
+.interactivity-chip-cancel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    margin-left: var(--spacing-xs);
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    color: var(--accent-6);
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.interactivity-chip-cancel:hover {
+    background: var(--accent-6);
+    color: white;
 }
 
 .context-badge {

@@ -21,6 +21,10 @@ const USER_ID = 'user-123';  // TODO: implement proper user management
 const CHANNEL_NAME = 'powerpoint-taskpane';
 const MAX_RECONNECT_ATTEMPTS = 3;
 
+const COMMANDS = [
+    { command: '/multiple-choice', description: 'Multiple choice quiz', icon: 'sports_esports', mode: 'multiple-choice' }
+];
+
 // ============================================
 // SLIDE THEME — single source of truth for colors used in
 // both the preview UI (injected as CSS vars) and slide insertion
@@ -94,6 +98,9 @@ const state = {
 
     // Platform
     isWeb: false,
+
+    // Interactivity mode
+    interactivityMode: null,  // null | 'multiple-choice'
 
     // WebSocket state
     ws: null,
@@ -333,6 +340,9 @@ function initializeTaskpane() {
         editBadge: document.getElementById('editBadge'),
         editBadgeSlideNum: document.getElementById('editBadgeSlideNum'),
         editBadgeCancelBtn: document.getElementById('editBadgeCancelBtn'),
+        interactivityChip: document.getElementById('interactivityChip'),
+        interactivityChipCancelBtn: document.getElementById('interactivityChipCancelBtn'),
+        commandsAutocomplete: document.getElementById('commandsAutocomplete'),
         settingsModal: document.getElementById('settingsModal'),
         closeModalBtn: document.getElementById('closeModalBtn'),
         cancelSettingsBtn: document.getElementById('cancelSettingsBtn'),
@@ -377,10 +387,23 @@ function setupEventListeners() {
         }
     });
 
-    // Auto-resize textarea
+    // Auto-resize textarea + command autocomplete
     messageInput.addEventListener('input', () => {
         messageInput.style.height = 'auto';
         messageInput.style.height = Math.min(messageInput.scrollHeight, 100) + 'px';
+
+        const val = messageInput.value;
+        if (val.startsWith('/')) {
+            showCommandsAutocomplete(val);
+        } else {
+            hideCommandsAutocomplete();
+        }
+    });
+
+    messageInput.addEventListener('keydown', handleCommandAutocompleteKeydown);
+
+    messageInput.addEventListener('blur', () => {
+        setTimeout(hideCommandsAutocomplete, 150);
     });
 
     // Header buttons
@@ -390,6 +413,12 @@ function setupEventListeners() {
     const { editBadgeCancelBtn } = state.elements;
     if (editBadgeCancelBtn) {
         editBadgeCancelBtn.addEventListener('click', exitEditMode);
+    }
+
+    // Interactivity chip cancel
+    const { interactivityChipCancelBtn } = state.elements;
+    if (interactivityChipCancelBtn) {
+        interactivityChipCancelBtn.addEventListener('click', exitInteractivityMode);
     }
 
     // Context badge opens settings
@@ -444,6 +473,14 @@ function handleSend() {
     const { messageInput } = state.elements;
     const content = messageInput.value.trim();
     if (!content || state.isProcessing) return;
+
+    // Interactivity command detection
+    if (content.toLowerCase().startsWith('/multiple-choice')) {
+        messageInput.value = '';
+        messageInput.style.height = 'auto';
+        enterInteractivityMode('multiple-choice');
+        return;
+    }
 
     // Edit mode
     if (state.isEditMode && state.editingSlideIndex !== null) {
@@ -1179,6 +1216,95 @@ function updateEditBadgeSlideNumber(slideNumber) {
 function removeEditBadge() {
     const { editBadge } = state.elements;
     if (editBadge) editBadge.classList.add('hidden');
+}
+
+function enterInteractivityMode(mode) {
+    const { interactivityChip, messageInput } = state.elements;
+    state.interactivityMode = mode;
+    if (interactivityChip) interactivityChip.classList.remove('hidden');
+    if (messageInput) messageInput.placeholder = 'Describe your quiz topic...';
+}
+
+function exitInteractivityMode() {
+    const { interactivityChip, messageInput } = state.elements;
+    state.interactivityMode = null;
+    if (interactivityChip) interactivityChip.classList.add('hidden');
+    if (messageInput) messageInput.placeholder = 'Type your request...';
+}
+
+// ── Commands autocomplete ─────────────────────────────────────────────────────
+
+let highlightedCommandIndex = -1;
+
+function showCommandsAutocomplete(query) {
+    const { commandsAutocomplete } = state.elements;
+    if (!commandsAutocomplete) return;
+
+    const matches = COMMANDS.filter(c => c.command.startsWith(query.toLowerCase()));
+
+    if (matches.length === 0) {
+        hideCommandsAutocomplete();
+        return;
+    }
+
+    highlightedCommandIndex = -1;
+    commandsAutocomplete.innerHTML = matches.map((c, i) => `
+        <div class="command-item" data-index="${i}" data-command="${c.command}" data-mode="${c.mode}">
+            <span class="material-icons">${c.icon}</span>
+            <span class="command-item-name">${c.command}</span>
+            <span class="command-item-desc">${c.description}</span>
+        </div>
+    `).join('');
+
+    commandsAutocomplete.querySelectorAll('.command-item').forEach(item => {
+        item.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            selectCommand(item.dataset.mode);
+        });
+    });
+
+    commandsAutocomplete.classList.remove('hidden');
+}
+
+function hideCommandsAutocomplete() {
+    const { commandsAutocomplete } = state.elements;
+    if (commandsAutocomplete) commandsAutocomplete.classList.add('hidden');
+    highlightedCommandIndex = -1;
+}
+
+function selectCommand(mode) {
+    const { messageInput } = state.elements;
+    if (messageInput) messageInput.value = '';
+    hideCommandsAutocomplete();
+    enterInteractivityMode(mode);
+    if (messageInput) messageInput.focus();
+}
+
+function handleCommandAutocompleteKeydown(e) {
+    const { commandsAutocomplete } = state.elements;
+    if (!commandsAutocomplete || commandsAutocomplete.classList.contains('hidden')) return;
+
+    const items = commandsAutocomplete.querySelectorAll('.command-item');
+    if (items.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        highlightedCommandIndex = (highlightedCommandIndex + 1) % items.length;
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        highlightedCommandIndex = (highlightedCommandIndex - 1 + items.length) % items.length;
+    } else if (e.key === 'Enter' && highlightedCommandIndex >= 0) {
+        e.preventDefault();
+        selectCommand(items[highlightedCommandIndex].dataset.mode);
+        return;
+    } else if (e.key === 'Escape') {
+        hideCommandsAutocomplete();
+        return;
+    } else {
+        return;
+    }
+
+    items.forEach((item, i) => item.classList.toggle('highlighted', i === highlightedCommandIndex));
 }
 
 // ============================================

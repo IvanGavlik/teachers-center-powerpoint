@@ -85,6 +85,7 @@
              INPUT FOOTER
              ============================================ -->
         <footer class="input-footer">
+            <div class="commands-autocomplete hidden" id="commandsAutocomplete"></div>
             <div class="input-container" id="inputContainer">
                 <div class="edit-badge hidden" id="editBadge">
                     <span class="material-icons" style="font-size: 14px;">edit</span>
@@ -98,6 +99,11 @@
                 ></textarea>
             </div>
 
+            <div class="interactivity-chip hidden" id="interactivityChip">
+                <span class="material-icons" style="font-size: 14px;">sports_esports</span>
+                <span>Multiple Choice Quiz</span>
+                <button class="interactivity-chip-cancel" id="interactivityChipCancelBtn">&times;</button>
+            </div>
             <div class="input-context">
                 <span>AI-generated content may need review</span>
             </div>
