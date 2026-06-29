@@ -723,6 +723,92 @@ body {
     margin-left: auto;
 }
 
+.interactivity-preview {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.interactivity-preview-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.interactivity-preview-header .material-icons {
+    font-size: 16px;
+    color: var(--accent-6);
+}
+
+.interactivity-preview-title {
+    font-weight: 600;
+    font-size: 13px;
+    flex: 1;
+}
+
+.interactivity-preview-meta {
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.interactivity-preview-questions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    border-left: 2px solid var(--accent-6);
+    padding-left: var(--spacing-sm);
+}
+
+.interactivity-preview-question {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.interactivity-preview-q {
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.interactivity-preview-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+}
+
+.interactivity-preview-option {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.interactivity-preview-option.correct {
+    color: var(--accent-6);
+    font-weight: 600;
+}
+
+.interactivity-preview-more {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+.interactivity-add-btn {
+    align-self: flex-start;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--accent-6);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.interactivity-add-btn:hover {
+    background: #5a9038;
+}
+
 .interactivity-confirm-buttons {
     display: flex;
     gap: var(--spacing-xs);

@@ -10,6 +10,7 @@
 import './taskpane.css';
 import PptxGenJS from 'pptxgenjs';
 import JSZip from 'jszip';
+import QRCode from 'qrcode';
 
 // ============================================
 // WEBSOCKET CONFIGURATION
@@ -17,6 +18,7 @@ import JSZip from 'jszip';
 
 const WS_URL = process.env.WS_URL;
 const API_URL = process.env.API_URL;
+const GAME_BASE_URL = `${API_URL}/game`;
 const USER_ID = 'user-123';  // TODO: implement proper user management
 const CHANNEL_NAME = 'powerpoint-taskpane';
 const MAX_RECONNECT_ATTEMPTS = 3;
@@ -113,8 +115,9 @@ const state = {
     isWeb: false,
 
     // Interactivity mode
-    interactivityMode: null,          // null | 'multiple-choice'
+    interactivityMode: null,           // null | 'multiple-choice'
     pendingInteractivityRequest: null, // message stored while waiting for confirmation
+    pendingActivity: null,             // full activity payload while in interactivity preview
 
     // WebSocket state
     ws: null,
@@ -529,11 +532,11 @@ function handleSend() {
     showProgressInPreviewArea('Generating content...');
     state.originalRequest = content;
 
-    const sent = sendWebSocketMessage({
-        type: 'conversation',
-        content: content
-    });
+    const message = state.interactivityMode
+        ? { type: 'interactivity', content, interactivity: { mode: state.interactivityMode } }
+        : { type: 'conversation', content };
 
+    const sent = sendWebSocketMessage(message);
     if (!sent) connectWebSocket();
 }
 
@@ -578,6 +581,7 @@ function handleNewChat() {
     state.editingSlideIndex = null;
     state.isEditMode = false;
     state.pendingInteractivityRequest = null;
+    state.pendingActivity = null;
     exitInteractivityMode();
 
     hidePreviewArea();
@@ -667,7 +671,8 @@ function sendWebSocketMessage(message) {
                 'native-language': 'No',
                 'age-group': state.settings.ageGroup || null
             },
-            ...(message.edit && { edit: message.edit })
+            ...(message.edit && { edit: message.edit }),
+            ...(message.type === 'interactivity' && { interactivity: message.interactivity })
         };
 
         state.ws.send(JSON.stringify(wsMessage));
@@ -733,6 +738,16 @@ async function handleWebSocketMessage(data) {
                 showError('Failed to apply edit. Please try again.');
                 setProcessing(false);
             }
+            return;
+        }
+
+        // Interactivity response
+        if (message.type === 'interactivity') {
+            state.conversationId = message['conversation-id'];
+            hideProgress();
+            exitInteractivityMode();
+            showInteractivityPreview(message);
+            setProcessing(false);
             return;
         }
 
@@ -1076,6 +1091,7 @@ function dismissPreview(message) {
     state.previewElement = null;
     state.isInPreviewMode = false;
     state.conversationId = null;
+    state.pendingActivity = null;
 }
 
 // ============================================
@@ -1258,6 +1274,60 @@ function exitInteractivityMode() {
     if (messageInput) messageInput.placeholder = 'Type your request...';
 }
 
+// ── Interactivity preview ─────────────────────────────────────────────────────
+
+function showInteractivityPreview(activity) {
+    state.pendingActivity = activity;
+
+    const questions = activity.questions || [];
+    const slides = questions.map((q, i) => ({
+        title: `${i + 1}. ${q.question}`,
+        content: q.options.map((opt, oi) =>
+            `${oi === q.correct ? '✓' : '   '} ${String.fromCharCode(65 + oi)}) ${opt}`
+        ).join('\n') + (q.explanation ? `\n\n→ ${q.explanation}` : ''),
+        type: 'Quiz'
+    }));
+
+    showSlidePreview(slides, activity.title || 'Multiple Choice Quiz');
+}
+
+async function handleAddInteractivityToSlide(activity) {
+    hidePreviewArea();
+    state.pendingActivity = null;
+
+    setProcessing(true);
+    showProgressInPreviewArea('Building quiz slide...');
+
+    try {
+        const base64 = await buildInteractivityPptxBase64(activity);
+
+        await PowerPoint.run(async (context) => {
+            const presentation = context.presentation;
+            presentation.slides.load('items/id');
+            await context.sync();
+
+            const items = presentation.slides.items;
+            const lastSlideId = items.length > 0 ? items[items.length - 1].id : undefined;
+
+            presentation.insertSlidesFromBase64(base64, {
+                formatting: 'UseDestinationTheme',
+                targetSlideId: lastSlideId,
+            });
+            await context.sync();
+        });
+
+        hideProgress();
+        setProcessing(false);
+        state.conversationId = null;
+        showSuccess('Quiz slide added! Students can scan the QR code to play.');
+    } catch (error) {
+        console.error('[Interactivity] Failed to insert slide:', error);
+        hideProgress();
+        setProcessing(false);
+        showError('Failed to add quiz slide. Please try again.');
+    }
+}
+
 // ── Interactivity keyword detection ──────────────────────────────────────────
 
 function containsInteractivityKeyword(text) {
@@ -1308,7 +1378,11 @@ function triggerSendWithContent(content) {
     showProgressInPreviewArea('Generating content...');
     state.originalRequest = content;
 
-    const sent = sendWebSocketMessage({ type: 'conversation', content });
+    const message = state.interactivityMode
+        ? { type: 'interactivity', content, interactivity: { mode: state.interactivityMode } }
+        : { type: 'conversation', content };
+
+    const sent = sendWebSocketMessage(message);
     if (!sent) connectWebSocket();
 }
 
@@ -1435,6 +1509,11 @@ function handleCommandAutocompleteKeydown(e) {
 // ============================================
 
 async function insertAllSlides() {
+    if (state.pendingActivity) {
+        await handleAddInteractivityToSlide(state.pendingActivity);
+        return;
+    }
+
     if (state.slides.length === 0) {
         showError('No slides to insert.');
         return;
@@ -1643,6 +1722,68 @@ async function buildPptxBase64(slides) {
             });
         }
     }
+
+    return await pptx.write('base64');
+}
+
+async function buildInteractivityPptxBase64(activity) {
+    const pt = (v) => +(v / 72).toFixed(4);
+    const c = (hex) => hex.slice(1);
+
+    const gameUrl = `${GAME_BASE_URL}/${activity['activity-id']}`;
+    const qrDataUrl = await QRCode.toDataURL(gameUrl, { width: 300, margin: 1 });
+
+    const pptx = new PptxGenJS();
+    const slide = pptx.addSlide();
+
+    // Left — QR code
+    slide.addImage({
+        data: qrDataUrl,
+        x: pt(50), y: pt(90),
+        w: pt(260), h: pt(260),
+    });
+
+    // Left label — "Scan to play!"
+    slide.addText('Scan to play!', {
+        x: pt(50), y: pt(360),
+        w: pt(260), h: pt(30),
+        fontSize: 14,
+        bold: true,
+        fontFace: SLIDE_THEME.fonts.body,
+        color: c(SLIDE_THEME.colors.subtitle),
+        align: 'center',
+    });
+
+    // Right — Quiz title
+    slide.addText(activity.title || 'Multiple Choice Quiz', {
+        x: pt(360), y: pt(90),
+        w: pt(310), h: pt(70),
+        fontSize: 28,
+        bold: true,
+        fontFace: SLIDE_THEME.fonts.heading,
+        color: c(SLIDE_THEME.colors.title),
+        wrap: true,
+    });
+
+    // Right — Question count
+    const questionCount = activity['question-count'] || (activity.questions || []).length;
+    slide.addText(`🎮  ${questionCount} questions`, {
+        x: pt(360), y: pt(170),
+        w: pt(310), h: pt(30),
+        fontSize: 16,
+        fontFace: SLIDE_THEME.fonts.body,
+        color: c(SLIDE_THEME.colors.subtitle),
+    });
+
+    // Right — Instructions
+    slide.addText('How to join:\n1. Open your phone camera\n2. Scan the QR code\n3. Answer the questions', {
+        x: pt(360), y: pt(230),
+        w: pt(310), h: pt(160),
+        fontSize: 16,
+        fontFace: SLIDE_THEME.fonts.body,
+        color: c(SLIDE_THEME.colors.content),
+        wrap: true,
+    });
 
     return await pptx.write('base64');
 }
