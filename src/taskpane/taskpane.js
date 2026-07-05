@@ -25,7 +25,8 @@ const MAX_RECONNECT_ATTEMPTS = 3;
 
 const COMMANDS = [
     { command: '/multiple-choice', description: 'Multiple choice quiz', icon: 'sports_esports', mode: 'multiple-choice' },
-    { command: '/sentence-ordering', description: 'Sentence ordering game', icon: 'reorder', mode: 'sentence-ordering' }
+    { command: '/sentence-ordering', description: 'Sentence ordering game', icon: 'reorder', mode: 'sentence-ordering' },
+    { command: '/guess-the-word', description: 'Guess the word', icon: 'psychology', mode: 'guess-the-word' }
 ];
 
 const INTERACTIVITY_KEYWORDS = [
@@ -44,7 +45,11 @@ const INTERACTIVITY_KEYWORDS = [
     { keyword: 'unscramble', mode: 'sentence-ordering' },
     { keyword: 'arrange the words', mode: 'sentence-ordering' },
     { keyword: 'sentence scramble', mode: 'sentence-ordering' },
-    { keyword: 'order the words', mode: 'sentence-ordering' }
+    { keyword: 'order the words', mode: 'sentence-ordering' },
+    { keyword: 'guess the word', mode: 'guess-the-word' },
+    { keyword: 'word from definition', mode: 'guess-the-word' },
+    { keyword: 'guess the vocabulary', mode: 'guess-the-word' },
+    { keyword: 'definition game', mode: 'guess-the-word' }
 ];
 
 const INTERACTIVITY_MODE_LABELS = {
@@ -63,6 +68,14 @@ const INTERACTIVITY_MODE_LABELS = {
         successMessage: 'Sentence ordering slide added! Students can scan the QR code to play.',
         countNoun: 'sentences',
         joinStep3: 'Arrange the words in order'
+    },
+    'guess-the-word': {
+        label: 'Guess the Word',
+        icon: 'psychology',
+        placeholder: 'Describe the vocabulary/topic to practice...',
+        successMessage: 'Guess the word slide added! Students can scan the QR code to play.',
+        countNoun: 'words',
+        joinStep3: 'Guess the word from its definition'
     }
 };
 
@@ -1311,23 +1324,36 @@ function exitInteractivityMode() {
 
 // ── Interactivity preview ─────────────────────────────────────────────────────
 
+function buildInteractivityPreviewSlides(activity, questions) {
+    switch (activity.mode) {
+        case 'sentence-ordering':
+            return questions.map((q, i) => ({
+                title: `${i + 1}. Arrange the words`,
+                content: (q.sentence || []).join(' ') + (q.hint ? `\n\n💡 ${q.hint}` : ''),
+                type: 'Sentence Ordering'
+            }));
+        case 'guess-the-word':
+            return questions.map((q, i) => ({
+                title: `${i + 1}. ${q.definition}`,
+                content: `Answer: ${q.word}` + (q.hint ? `\n💡 ${q.hint}` : ''),
+                type: 'Guess the Word'
+            }));
+        default:
+            return questions.map((q, i) => ({
+                title: `${i + 1}. ${q.question}`,
+                content: q.options.map((opt, oi) =>
+                    `${oi === q.correct ? '✓' : '   '} ${String.fromCharCode(65 + oi)}) ${opt}`
+                ).join('\n') + (q.explanation ? `\n\n→ ${q.explanation}` : ''),
+                type: 'Quiz'
+            }));
+    }
+}
+
 function showInteractivityPreview(activity) {
     state.pendingActivity = activity;
 
     const questions = activity.questions || [];
-    const slides = activity.mode === 'sentence-ordering'
-        ? questions.map((q, i) => ({
-              title: `${i + 1}. Arrange the words`,
-              content: (q.sentence || []).join(' ') + (q.hint ? `\n\n💡 ${q.hint}` : ''),
-              type: 'Sentence Ordering'
-          }))
-        : questions.map((q, i) => ({
-              title: `${i + 1}. ${q.question}`,
-              content: q.options.map((opt, oi) =>
-                  `${oi === q.correct ? '✓' : '   '} ${String.fromCharCode(65 + oi)}) ${opt}`
-              ).join('\n') + (q.explanation ? `\n\n→ ${q.explanation}` : ''),
-              type: 'Quiz'
-          }));
+    const slides = buildInteractivityPreviewSlides(activity, questions);
 
     showSlidePreview(slides, activity.title || (INTERACTIVITY_MODE_LABELS[activity.mode] || {}).label || 'Interactive Activity');
 }
