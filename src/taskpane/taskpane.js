@@ -26,7 +26,8 @@ const MAX_RECONNECT_ATTEMPTS = 3;
 const COMMANDS = [
     { command: '/multiple-choice', description: 'Multiple choice quiz', icon: 'sports_esports', mode: 'multiple-choice' },
     { command: '/sentence-ordering', description: 'Sentence ordering game', icon: 'reorder', mode: 'sentence-ordering' },
-    { command: '/guess-the-word', description: 'Guess the word', icon: 'psychology', mode: 'guess-the-word' }
+    { command: '/guess-the-word', description: 'Guess the word', icon: 'psychology', mode: 'guess-the-word' },
+    { command: '/true-false', description: 'True or false game', icon: 'fact_check', mode: 'true-false' }
 ];
 
 const INTERACTIVITY_KEYWORDS = [
@@ -49,7 +50,11 @@ const INTERACTIVITY_KEYWORDS = [
     { keyword: 'guess the word', mode: 'guess-the-word' },
     { keyword: 'word from definition', mode: 'guess-the-word' },
     { keyword: 'guess the vocabulary', mode: 'guess-the-word' },
-    { keyword: 'definition game', mode: 'guess-the-word' }
+    { keyword: 'definition game', mode: 'guess-the-word' },
+    { keyword: 'true or false', mode: 'true-false' },
+    { keyword: 'true/false', mode: 'true-false' },
+    { keyword: 'true false quiz', mode: 'true-false' },
+    { keyword: 'fact check', mode: 'true-false' }
 ];
 
 const INTERACTIVITY_MODE_LABELS = {
@@ -76,6 +81,14 @@ const INTERACTIVITY_MODE_LABELS = {
         successMessage: 'Guess the word slide added! Students can scan the QR code to play.',
         countNoun: 'words',
         joinStep3: 'Guess the word from its definition'
+    },
+    'true-false': {
+        label: 'True or False',
+        icon: 'fact_check',
+        placeholder: 'Describe the topic for true/false statements...',
+        successMessage: 'True or false slide added! Students can scan the QR code to play.',
+        countNoun: 'statements',
+        joinStep3: 'Decide if each statement is true or false'
     }
 };
 
@@ -1337,6 +1350,12 @@ function buildInteractivityPreviewSlides(activity, questions) {
                 title: `${i + 1}. ${q.definition}`,
                 content: `Answer: ${q.word}` + (q.hint ? `\n💡 ${q.hint}` : ''),
                 type: 'Guess the Word'
+            }));
+        case 'true-false':
+            return questions.map((q, i) => ({
+                title: `${i + 1}. ${q.statement}`,
+                content: `Answer: ${q.answer ? 'True' : 'False'}` + (q.explanation ? `\n\n→ ${q.explanation}` : ''),
+                type: 'True or False'
             }));
         default:
             return questions.map((q, i) => ({
