@@ -1231,6 +1231,13 @@ function setupPreviewNavigation(previewEl) {
     previewEl.querySelector('#navEditBtn').addEventListener('click', editSlide);
     previewEl.querySelector('#navNextBtn').addEventListener('click', navigateNext);
     previewEl.querySelector('#previewCancelBtn').addEventListener('click', cancelPreview);
+
+    // Interactivity activities (quiz/sentence-ordering/guess-the-word/true-false) insert as a
+    // single slide built from state.pendingActivity — per-question Edit/Remove has nothing to act on.
+    if (state.pendingActivity) {
+        previewEl.querySelector('#navSkipBtn').classList.add('hidden');
+        previewEl.querySelector('#navEditBtn').classList.add('hidden');
+    }
 }
 
 function cancelPreview() {
@@ -1262,6 +1269,8 @@ function navigateNext() {
 }
 
 function removeSlide() {
+    if (state.pendingActivity) return;
+
     if (state.slides.length <= 1) {
         state.slides.splice(0, 1);
         dismissPreview('All slides removed.');
@@ -1280,6 +1289,8 @@ function removeSlide() {
 }
 
 function editSlide() {
+    if (state.pendingActivity) return;
+
     const { messageInput, typeSelector } = state.elements;
     state.isEditMode = true;
     state.editingSlideIndex = state.currentSlideIndex;
@@ -1966,8 +1977,8 @@ function handleGlobalKeydown(e) {
     if (document.activeElement === state.elements.messageInput) return;
 
     switch (e.key.toLowerCase()) {
-        case 'r': e.preventDefault(); flashButton('navSkipBtn'); removeSlide(); break;
-        case 'e': e.preventDefault(); flashButton('navEditBtn'); editSlide(); break;
+        case 'r': if (!state.pendingActivity) { e.preventDefault(); flashButton('navSkipBtn'); removeSlide(); } break;
+        case 'e': if (!state.pendingActivity) { e.preventDefault(); flashButton('navEditBtn'); editSlide(); } break;
         case 'a': e.preventDefault(); insertAllSlides(); break;
         case 'escape': e.preventDefault(); state.elements.messageInput.focus(); break;
         case 'arrowleft':
