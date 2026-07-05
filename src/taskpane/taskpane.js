@@ -24,21 +24,47 @@ const CHANNEL_NAME = 'powerpoint-taskpane';
 const MAX_RECONNECT_ATTEMPTS = 3;
 
 const COMMANDS = [
-    { command: '/multiple-choice', description: 'Multiple choice quiz', icon: 'sports_esports', mode: 'multiple-choice' }
+    { command: '/multiple-choice', description: 'Multiple choice quiz', icon: 'sports_esports', mode: 'multiple-choice' },
+    { command: '/sentence-ordering', description: 'Sentence ordering game', icon: 'reorder', mode: 'sentence-ordering' }
 ];
 
 const INTERACTIVITY_KEYWORDS = [
-    'multiple choice',
-    'mcq',
-    'quiz game',
-    'interactive quiz',
-    'make a quiz',
-    'create a quiz',
-    'quiz activity',
-    'class quiz',
-    'student quiz',
-    'practice quiz'
+    { keyword: 'multiple choice', mode: 'multiple-choice' },
+    { keyword: 'mcq', mode: 'multiple-choice' },
+    { keyword: 'quiz game', mode: 'multiple-choice' },
+    { keyword: 'interactive quiz', mode: 'multiple-choice' },
+    { keyword: 'make a quiz', mode: 'multiple-choice' },
+    { keyword: 'create a quiz', mode: 'multiple-choice' },
+    { keyword: 'quiz activity', mode: 'multiple-choice' },
+    { keyword: 'class quiz', mode: 'multiple-choice' },
+    { keyword: 'student quiz', mode: 'multiple-choice' },
+    { keyword: 'practice quiz', mode: 'multiple-choice' },
+    { keyword: 'sentence order', mode: 'sentence-ordering' },
+    { keyword: 'word order', mode: 'sentence-ordering' },
+    { keyword: 'unscramble', mode: 'sentence-ordering' },
+    { keyword: 'arrange the words', mode: 'sentence-ordering' },
+    { keyword: 'sentence scramble', mode: 'sentence-ordering' },
+    { keyword: 'order the words', mode: 'sentence-ordering' }
 ];
+
+const INTERACTIVITY_MODE_LABELS = {
+    'multiple-choice': {
+        label: 'Multiple Choice Quiz',
+        icon: 'sports_esports',
+        placeholder: 'Describe your quiz topic...',
+        successMessage: 'Quiz slide added! Students can scan the QR code to play.',
+        countNoun: 'questions',
+        joinStep3: 'Answer the questions'
+    },
+    'sentence-ordering': {
+        label: 'Sentence Ordering',
+        icon: 'reorder',
+        placeholder: 'Describe the sentences/topic to practice...',
+        successMessage: 'Sentence ordering slide added! Students can scan the QR code to play.',
+        countNoun: 'sentences',
+        joinStep3: 'Arrange the words in order'
+    }
+};
 
 // ============================================
 // SLIDE THEME — single source of truth for colors used in
@@ -115,8 +141,9 @@ const state = {
     isWeb: false,
 
     // Interactivity mode
-    interactivityMode: null,           // null | 'multiple-choice'
+    interactivityMode: null,           // null | 'multiple-choice' | 'sentence-ordering'
     pendingInteractivityRequest: null, // message stored while waiting for confirmation
+    pendingInteractivityMode: null,    // mode detected for the pending confirmation
     pendingActivity: null,             // full activity payload while in interactivity preview
 
     // WebSocket state
@@ -358,6 +385,8 @@ function initializeTaskpane() {
         editBadgeSlideNum: document.getElementById('editBadgeSlideNum'),
         editBadgeCancelBtn: document.getElementById('editBadgeCancelBtn'),
         interactivityChip: document.getElementById('interactivityChip'),
+        interactivityChipIcon: document.getElementById('interactivityChipIcon'),
+        interactivityChipLabel: document.getElementById('interactivityChipLabel'),
         interactivityChipCancelBtn: document.getElementById('interactivityChipCancelBtn'),
         commandsAutocomplete: document.getElementById('commandsAutocomplete'),
         settingsModal: document.getElementById('settingsModal'),
@@ -492,20 +521,22 @@ function handleSend() {
     if (!content || state.isProcessing) return;
 
     // Interactivity command detection — Option 1: explicit /command
-    if (content.toLowerCase().startsWith('/multiple-choice')) {
+    const matchedCommand = COMMANDS.find(c => content.toLowerCase().startsWith(c.command));
+    if (matchedCommand) {
         messageInput.value = '';
         messageInput.style.height = 'auto';
-        enterInteractivityMode('multiple-choice');
+        enterInteractivityMode(matchedCommand.mode);
         return;
     }
 
     // Interactivity keyword detection — Option 2: natural language
-    if (!state.interactivityMode && containsInteractivityKeyword(content)) {
+    const detectedMode = !state.interactivityMode ? detectInteractivityMode(content) : null;
+    if (detectedMode) {
         messageInput.value = '';
         messageInput.style.height = 'auto';
         state.elements.welcomeState.classList.add('hidden');
         addUserMessage(content);
-        showInteractivityConfirmation(content);
+        showInteractivityConfirmation(content, detectedMode);
         return;
     }
 
@@ -581,6 +612,7 @@ function handleNewChat() {
     state.editingSlideIndex = null;
     state.isEditMode = false;
     state.pendingInteractivityRequest = null;
+    state.pendingInteractivityMode = null;
     state.pendingActivity = null;
     exitInteractivityMode();
 
@@ -1261,10 +1293,13 @@ function removeEditBadge() {
 }
 
 function enterInteractivityMode(mode) {
-    const { interactivityChip, messageInput } = state.elements;
+    const { interactivityChip, interactivityChipIcon, interactivityChipLabel, messageInput } = state.elements;
     state.interactivityMode = mode;
+    const meta = INTERACTIVITY_MODE_LABELS[mode] || INTERACTIVITY_MODE_LABELS['multiple-choice'];
     if (interactivityChip) interactivityChip.classList.remove('hidden');
-    if (messageInput) messageInput.placeholder = 'Describe your quiz topic...';
+    if (interactivityChipIcon) interactivityChipIcon.textContent = meta.icon;
+    if (interactivityChipLabel) interactivityChipLabel.textContent = meta.label;
+    if (messageInput) messageInput.placeholder = meta.placeholder;
 }
 
 function exitInteractivityMode() {
@@ -1280,15 +1315,21 @@ function showInteractivityPreview(activity) {
     state.pendingActivity = activity;
 
     const questions = activity.questions || [];
-    const slides = questions.map((q, i) => ({
-        title: `${i + 1}. ${q.question}`,
-        content: q.options.map((opt, oi) =>
-            `${oi === q.correct ? '✓' : '   '} ${String.fromCharCode(65 + oi)}) ${opt}`
-        ).join('\n') + (q.explanation ? `\n\n→ ${q.explanation}` : ''),
-        type: 'Quiz'
-    }));
+    const slides = activity.mode === 'sentence-ordering'
+        ? questions.map((q, i) => ({
+              title: `${i + 1}. Arrange the words`,
+              content: (q.sentence || []).join(' ') + (q.hint ? `\n\n💡 ${q.hint}` : ''),
+              type: 'Sentence Ordering'
+          }))
+        : questions.map((q, i) => ({
+              title: `${i + 1}. ${q.question}`,
+              content: q.options.map((opt, oi) =>
+                  `${oi === q.correct ? '✓' : '   '} ${String.fromCharCode(65 + oi)}) ${opt}`
+              ).join('\n') + (q.explanation ? `\n\n→ ${q.explanation}` : ''),
+              type: 'Quiz'
+          }));
 
-    showSlidePreview(slides, activity.title || 'Multiple Choice Quiz');
+    showSlidePreview(slides, activity.title || (INTERACTIVITY_MODE_LABELS[activity.mode] || {}).label || 'Interactive Activity');
 }
 
 async function handleAddInteractivityToSlide(activity) {
@@ -1296,7 +1337,7 @@ async function handleAddInteractivityToSlide(activity) {
     state.pendingActivity = null;
 
     setProcessing(true);
-    showProgressInPreviewArea('Building quiz slide...');
+    showProgressInPreviewArea('Building activity slide...');
 
     try {
         const base64 = await buildInteractivityPptxBase64(activity);
@@ -1319,24 +1360,27 @@ async function handleAddInteractivityToSlide(activity) {
         hideProgress();
         setProcessing(false);
         state.conversationId = null;
-        showSuccess('Quiz slide added! Students can scan the QR code to play.');
+        showSuccess((INTERACTIVITY_MODE_LABELS[activity.mode] || {}).successMessage
+            || 'Activity slide added! Students can scan the QR code to play.');
     } catch (error) {
         console.error('[Interactivity] Failed to insert slide:', error);
         hideProgress();
         setProcessing(false);
-        showError('Failed to add quiz slide. Please try again.');
+        showError('Failed to add activity slide. Please try again.');
     }
 }
 
 // ── Interactivity keyword detection ──────────────────────────────────────────
 
-function containsInteractivityKeyword(text) {
+function detectInteractivityMode(text) {
     const lower = text.toLowerCase();
-    return INTERACTIVITY_KEYWORDS.some(kw => lower.includes(kw));
+    const match = INTERACTIVITY_KEYWORDS.find(k => lower.includes(k.keyword));
+    return match ? match.mode : null;
 }
 
-function showInteractivityConfirmation(originalMessage) {
+function showInteractivityConfirmation(originalMessage, mode) {
     state.pendingInteractivityRequest = originalMessage;
+    state.pendingInteractivityMode = mode;
 
     const template = document.getElementById('aiMessageTemplate');
     const clone = template.content.cloneNode(true);
@@ -1358,10 +1402,13 @@ function showInteractivityConfirmation(originalMessage) {
 }
 
 function handleInteractivityConfirmYes(e, messageEl) {
-    messageEl.textContent = '🎮 Multiple Choice Quiz';
+    const mode = state.pendingInteractivityMode || 'multiple-choice';
+    const meta = INTERACTIVITY_MODE_LABELS[mode] || INTERACTIVITY_MODE_LABELS['multiple-choice'];
+    messageEl.textContent = `🎮 ${meta.label}`;
     const pending = state.pendingInteractivityRequest;
     state.pendingInteractivityRequest = null;
-    enterInteractivityMode('multiple-choice');
+    state.pendingInteractivityMode = null;
+    enterInteractivityMode(mode);
     if (pending) triggerSendWithContent(pending);
 }
 
@@ -1369,6 +1416,7 @@ function handleInteractivityConfirmNo(e, messageEl) {
     messageEl.textContent = '📄 Creating slides...';
     const pending = state.pendingInteractivityRequest;
     state.pendingInteractivityRequest = null;
+    state.pendingInteractivityMode = null;
     if (pending) triggerSendWithContent(pending);
 }
 
@@ -1729,6 +1777,7 @@ async function buildPptxBase64(slides) {
 async function buildInteractivityPptxBase64(activity) {
     const pt = (v) => +(v / 72).toFixed(4);
     const c = (hex) => hex.slice(1);
+    const meta = INTERACTIVITY_MODE_LABELS[activity.mode] || INTERACTIVITY_MODE_LABELS['multiple-choice'];
 
     const gameUrl = `${GAME_BASE_URL}/${activity['activity-id']}`;
     const qrDataUrl = await QRCode.toDataURL(gameUrl, { width: 300, margin: 1 });
@@ -1754,8 +1803,8 @@ async function buildInteractivityPptxBase64(activity) {
         align: 'center',
     });
 
-    // Right — Quiz title
-    slide.addText(activity.title || 'Multiple Choice Quiz', {
+    // Right — Activity title
+    slide.addText(activity.title || meta.label, {
         x: pt(360), y: pt(90),
         w: pt(310), h: pt(70),
         fontSize: 28,
@@ -1767,7 +1816,7 @@ async function buildInteractivityPptxBase64(activity) {
 
     // Right — Question count
     const questionCount = activity['question-count'] || (activity.questions || []).length;
-    slide.addText(`🎮  ${questionCount} questions`, {
+    slide.addText(`🎮  ${questionCount} ${meta.countNoun}`, {
         x: pt(360), y: pt(170),
         w: pt(310), h: pt(30),
         fontSize: 16,
@@ -1776,7 +1825,7 @@ async function buildInteractivityPptxBase64(activity) {
     });
 
     // Right — Instructions
-    slide.addText('How to join:\n1. Open your phone camera\n2. Scan the QR code\n3. Answer the questions', {
+    slide.addText(`How to join:\n1. Open your phone camera\n2. Scan the QR code\n3. ${meta.joinStep3}`, {
         x: pt(360), y: pt(230),
         w: pt(310), h: pt(160),
         fontSize: 16,
