@@ -422,6 +422,10 @@ function initializeTaskpane() {
         settingsLanguage: document.getElementById('settingsLanguage'),
         settingsLevel: document.getElementById('settingsLevel'),
         settingsAgeGroup: document.getElementById('settingsAgeGroup'),
+        whatsNewModal: document.getElementById('whatsNewModal'),
+        closeWhatsNewModalBtn: document.getElementById('closeWhatsNewModalBtn'),
+        whatsNewCloseBtn: document.getElementById('whatsNewCloseBtn'),
+        whatsNewDontShowAgain: document.getElementById('whatsNewDontShowAgain'),
         feedbackBtn: document.getElementById('feedbackBtn'),
         feedbackModal: document.getElementById('feedbackModal'),
         closeFeedbackModalBtn: document.getElementById('closeFeedbackModalBtn'),
@@ -506,6 +510,14 @@ function setupEventListeners() {
     saveSettingsBtn.addEventListener('click', saveSettings);
     settingsModal.addEventListener('click', (e) => {
         if (e.target === settingsModal) closeSettingsModal();
+    });
+
+    // What's New modal
+    const { closeWhatsNewModalBtn, whatsNewCloseBtn, whatsNewModal } = state.elements;
+    closeWhatsNewModalBtn.addEventListener('click', closeWhatsNewModal);
+    whatsNewCloseBtn.addEventListener('click', closeWhatsNewModal);
+    whatsNewModal.addEventListener('click', (e) => {
+        if (e.target === whatsNewModal) closeWhatsNewModal();
     });
 
     // Global keyboard shortcuts
@@ -2034,6 +2046,12 @@ function loadSettings() {
 
     loadSettingsToForm();
     updateContextBadge();
+
+    // Returning users (settings already confirmed) never hit saveSettings(),
+    // so show What's New here instead — first-run users get it from saveSettings().
+    if (state.settingsConfirmed) {
+        setTimeout(() => maybeShowWhatsNewModal(), 200);
+    }
 }
 
 function loadSettingsToForm() {
@@ -2057,6 +2075,7 @@ function saveSettings() {
     state.settingsConfirmed = true;
     updateContextBadge();
     closeSettingsModal();
+    setTimeout(() => maybeShowWhatsNewModal(), 200);
 }
 
 function updateContextBadge() {
@@ -2064,6 +2083,24 @@ function updateContextBadge() {
     if (contextBadge) {
         contextBadge.textContent = `${state.settings.level} ${state.settings.language}`;
     }
+}
+
+// ============================================
+// WHAT'S NEW
+// ============================================
+
+const WHATS_NEW_STORAGE_KEY = 'teachersCenterWhatsNewSeen_interactivity';
+
+function maybeShowWhatsNewModal() {
+    if (localStorage.getItem(WHATS_NEW_STORAGE_KEY)) return;
+    state.elements.whatsNewModal.classList.remove('hidden');
+}
+
+function closeWhatsNewModal() {
+    if (state.elements.whatsNewDontShowAgain.checked) {
+        localStorage.setItem(WHATS_NEW_STORAGE_KEY, 'true');
+    }
+    state.elements.whatsNewModal.classList.add('hidden');
 }
 
 // ============================================

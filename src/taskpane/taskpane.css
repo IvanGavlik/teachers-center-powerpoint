@@ -1127,6 +1127,88 @@ textarea:focus-visible {
 }
 
 /* ============================================
+   WHAT'S NEW MODAL
+   ============================================ */
+
+.modal-content-wide {
+    max-width: 480px;
+}
+
+.whats-new-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-lg);
+    align-items: center;
+}
+
+.whats-new-text {
+    flex: 1 1 200px;
+    min-width: 0;
+}
+
+.whats-new-text h1 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 var(--spacing-sm) 0;
+}
+
+.whats-new-text ul {
+    margin: 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.whats-new-text li {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.whats-new-text code {
+    background-color: var(--bg-tertiary);
+    color: var(--accent-primary);
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+}
+
+.whats-new-image {
+    flex: 1 1 140px;
+    min-width: 120px;
+}
+
+.whats-new-image img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-light);
+    box-shadow: var(--shadow-sm);
+}
+
+.whats-new-footer {
+    justify-content: space-between;
+    align-items: center;
+}
+
+.whats-new-checkbox {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.whats-new-checkbox input[type="checkbox"] {
+    cursor: pointer;
+}
+
+/* ============================================
    FEEDBACK — Inline thumbs (Option 1 — success message)
    ============================================ */
 .feedback-thumbs {
