@@ -92,17 +92,29 @@
                     <span>Editing slide <span id="editBadgeSlideNum"></span></span>
                     <button class="edit-badge-cancel" id="editBadgeCancelBtn">&times;</button>
                 </div>
-                <textarea
-                    id="messageInput"
-                    placeholder="Type your request..."
-                    rows="2"
-                ></textarea>
+                <div class="input-row">
+                    <textarea
+                        id="messageInput"
+                        placeholder="Type your request..."
+                        rows="2"
+                    ></textarea>
+                    <button class="attach-btn" id="attachBookBtn" title="Attach a PDF (free tier — removed after a few days)">
+                        <span class="material-icons">attach_file</span>
+                    </button>
+                    <input type="file" id="bookFileInput" accept="application/pdf" hidden>
+                </div>
             </div>
 
             <div class="interactivity-chip hidden" id="interactivityChip">
                 <span class="material-icons" id="interactivityChipIcon" style="font-size: 14px;">sports_esports</span>
                 <span id="interactivityChipLabel">Multiple Choice Quiz</span>
                 <button class="interactivity-chip-cancel" id="interactivityChipCancelBtn">&times;</button>
+            </div>
+            <div class="book-chip hidden" id="bookChip" title="Free tier — removed after a few days">
+                <span class="material-icons" id="bookChipIcon" style="font-size: 14px;">description</span>
+                <span id="bookChipLabel">document.pdf</span>
+                <span class="book-chip-status" id="bookChipStatus">Processing…</span>
+                <button class="book-chip-cancel" id="bookChipCancelBtn">&times;</button>
             </div>
             <div class="input-context">
                 <span>AI-generated content may need review</span>
@@ -168,6 +180,13 @@
                         <span class="nav-shortcut">Enter</span>
                     </button>
                 </div>
+            </div>
+        </template>
+
+        <template id="infoMessageTemplate">
+            <div class="message-info fade-in">
+                <span class="material-icons">description</span>
+                <span class="info-text"></span>
             </div>
         </template>
 

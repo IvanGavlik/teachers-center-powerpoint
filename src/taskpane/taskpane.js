@@ -172,6 +172,12 @@ const state = {
     pendingInteractivityMode: null,    // mode detected for the pending confirmation
     pendingActivity: null,             // full activity payload while in interactivity preview
 
+    // Attached book (file_search grounding) — one at a time, ephemeral to this session
+    attachedBook: null,                // null | { vectorStoreId, filename, status }
+                                        // status: 'uploading' | 'processing' | 'ready' | 'error'
+    bookPollTimer: null,
+    bookPollAttempts: 0,
+
     // WebSocket state
     ws: null,
     wsState: 'disconnected',
@@ -414,6 +420,13 @@ function initializeTaskpane() {
         interactivityChipIcon: document.getElementById('interactivityChipIcon'),
         interactivityChipLabel: document.getElementById('interactivityChipLabel'),
         interactivityChipCancelBtn: document.getElementById('interactivityChipCancelBtn'),
+        attachBookBtn: document.getElementById('attachBookBtn'),
+        bookFileInput: document.getElementById('bookFileInput'),
+        bookChip: document.getElementById('bookChip'),
+        bookChipIcon: document.getElementById('bookChipIcon'),
+        bookChipLabel: document.getElementById('bookChipLabel'),
+        bookChipStatus: document.getElementById('bookChipStatus'),
+        bookChipCancelBtn: document.getElementById('bookChipCancelBtn'),
         commandsAutocomplete: document.getElementById('commandsAutocomplete'),
         settingsModal: document.getElementById('settingsModal'),
         closeModalBtn: document.getElementById('closeModalBtn'),
@@ -495,6 +508,19 @@ function setupEventListeners() {
     const { interactivityChipCancelBtn } = state.elements;
     if (interactivityChipCancelBtn) {
         interactivityChipCancelBtn.addEventListener('click', exitInteractivityMode);
+    }
+
+    // Attach-a-book (file_search grounding)
+    const { attachBookBtn, bookFileInput, bookChipCancelBtn } = state.elements;
+    if (attachBookBtn && bookFileInput) {
+        attachBookBtn.addEventListener('click', () => bookFileInput.click());
+        bookFileInput.addEventListener('change', () => {
+            const file = bookFileInput.files && bookFileInput.files[0];
+            if (file) handleBookFileSelected(file);
+        });
+    }
+    if (bookChipCancelBtn) {
+        bookChipCancelBtn.addEventListener('click', detachBook);
     }
 
     // Context badge opens settings
@@ -593,7 +619,8 @@ function handleSend() {
     state.cancelled = false;
     state.elements.welcomeState.classList.add('hidden');
 
-    addUserMessage(content);
+    const usingBook = state.attachedBook?.status === 'ready';
+    addUserMessage(usingBook ? `${content}  📄 Using: ${state.attachedBook.filename}` : content);
     messageInput.value = '';
     messageInput.style.height = 'auto';
 
@@ -653,6 +680,7 @@ function handleNewChat() {
     state.pendingInteractivityMode = null;
     state.pendingActivity = null;
     exitInteractivityMode();
+    detachBook();
 
     hidePreviewArea();
 
@@ -742,7 +770,8 @@ function sendWebSocketMessage(message) {
                 'age-group': state.settings.ageGroup || null
             },
             ...(message.edit && { edit: message.edit }),
-            ...(message.type === 'interactivity' && { interactivity: message.interactivity })
+            ...(message.type === 'interactivity' && { interactivity: message.interactivity }),
+            ...(state.attachedBook?.status === 'ready' && { 'book-ids': [state.attachedBook.vectorStoreId] })
         };
 
         state.ws.send(JSON.stringify(wsMessage));
@@ -1356,6 +1385,147 @@ function exitInteractivityMode() {
     state.interactivityMode = null;
     if (interactivityChip) interactivityChip.classList.add('hidden');
     if (messageInput) messageInput.placeholder = 'Type your request...';
+}
+
+// ============================================
+// ATTACHED BOOK (file_search grounding)
+// ============================================
+
+const BOOK_MAX_SIZE_BYTES = 20 * 1024 * 1024; // matches the backend's own limit
+const BOOK_POLL_INTERVAL_MS = 3000;
+const BOOK_POLL_MAX_ATTEMPTS = 40; // ~2 minutes
+
+function handleBookFileSelected(file) {
+    if (file.type !== 'application/pdf') {
+        showError('Only PDF files are supported.');
+        resetBookFileInput();
+        return;
+    }
+    if (file.size > BOOK_MAX_SIZE_BYTES) {
+        showError('That file is too large (20MB max).');
+        resetBookFileInput();
+        return;
+    }
+    uploadBook(file);
+}
+
+function resetBookFileInput() {
+    const { bookFileInput } = state.elements;
+    if (bookFileInput) bookFileInput.value = '';
+}
+
+async function uploadBook(file) {
+    state.attachedBook = { filename: file.name, status: 'uploading' };
+    renderBookChip();
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('book-name', file.name);
+
+    try {
+        const res = await fetch(`${API_URL}/library/upload`, { method: 'POST', body: formData });
+        if (!res.ok) throw new Error('Upload failed');
+        const data = await res.json();
+
+        state.attachedBook = {
+            vectorStoreId: data['vector-store-id'],
+            filename: file.name,
+            status: 'processing'
+        };
+        renderBookChip();
+        startBookStatusPolling();
+    } catch (error) {
+        console.error('[Library] Upload failed:', error);
+        showError('Failed to upload the document. Please try again.');
+        detachBook();
+    } finally {
+        resetBookFileInput();
+    }
+}
+
+function startBookStatusPolling() {
+    state.bookPollAttempts = 0;
+    clearInterval(state.bookPollTimer);
+    state.bookPollTimer = setInterval(pollBookStatus, BOOK_POLL_INTERVAL_MS);
+}
+
+async function pollBookStatus() {
+    if (!state.attachedBook || !state.attachedBook.vectorStoreId) return;
+
+    state.bookPollAttempts++;
+    if (state.bookPollAttempts > BOOK_POLL_MAX_ATTEMPTS) {
+        showError('Your document is taking longer than expected to process. Please try again.');
+        detachBook();
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/library/book-status/${state.attachedBook.vectorStoreId}`);
+        if (!res.ok) throw new Error('Status check failed');
+        const data = await res.json();
+
+        if (data.status === 'completed') {
+            clearInterval(state.bookPollTimer);
+            state.attachedBook.status = 'ready';
+            renderBookChip();
+            addInfoMessage(`"${state.attachedBook.filename}" is ready — your next message will use it. (Free tier: removed after a few days.)`);
+        } else if (data.status === 'expired' || (data['file-counts'] && data['file-counts'].failed > 0)) {
+            throw new Error('Processing failed');
+        }
+        // otherwise still "in_progress" — keep polling
+    } catch (error) {
+        console.error('[Library] Status check failed:', error);
+        showError('Failed to process the attached document. Please try again.');
+        detachBook();
+    }
+}
+
+function detachBook() {
+    clearInterval(state.bookPollTimer);
+    state.bookPollTimer = null;
+    state.bookPollAttempts = 0;
+    state.attachedBook = null;
+    renderBookChip();
+    resetBookFileInput();
+}
+
+function renderBookChip() {
+    const { bookChip, bookChipIcon, bookChipLabel, bookChipStatus, attachBookBtn } = state.elements;
+    if (!bookChip) return;
+
+    const book = state.attachedBook;
+    if (!book) {
+        bookChip.classList.add('hidden');
+        bookChip.classList.remove('book-chip-processing');
+        if (attachBookBtn) attachBookBtn.disabled = false;
+        return;
+    }
+
+    bookChip.classList.remove('hidden');
+    if (attachBookBtn) attachBookBtn.disabled = true; // one book at a time
+    bookChipLabel.textContent = book.filename;
+
+    const isProcessing = book.status === 'uploading' || book.status === 'processing';
+    bookChip.classList.toggle('book-chip-processing', isProcessing);
+
+    if (book.status === 'uploading') {
+        bookChipIcon.textContent = 'description';
+        bookChipStatus.textContent = 'Uploading…';
+    } else if (book.status === 'processing') {
+        bookChipIcon.textContent = 'description';
+        bookChipStatus.textContent = 'Processing…';
+    } else if (book.status === 'ready') {
+        bookChipIcon.textContent = 'check_circle';
+        bookChipStatus.textContent = 'Ready';
+    }
+}
+
+function addInfoMessage(text) {
+    const template = document.getElementById('infoMessageTemplate');
+    const clone = template.content.cloneNode(true);
+    const infoEl = clone.querySelector('.message-info');
+    infoEl.querySelector('.info-text').textContent = text;
+    appendToChatBody(infoEl);
 }
 
 // ── Interactivity preview ─────────────────────────────────────────────────────
