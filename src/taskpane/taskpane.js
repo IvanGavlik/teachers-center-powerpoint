@@ -574,6 +574,32 @@ function setupEventListeners() {
 // MESSAGE HANDLING
 // ============================================
 
+// POC 1: /poc-layouts [typical|max|overflow] [match|default] — see doc/poc-1-rendering-results.md
+async function runLayoutPocCommand(content) {
+    const [, variant = 'typical', sizeMode = 'match'] = content.split(/\s+/);
+    state.elements.welcomeState.classList.add('hidden');
+    addUserMessage(content);
+    setProcessing(true);
+    try {
+        // Constant condition: webpack drops this block (and the poc chunk) from production builds.
+        if (process.env.NODE_ENV !== 'production') {
+            await readPresentationTheme();
+            const { runLayoutPoc } = await import(/* webpackChunkName: "poc-layouts" */ './poc/layoutPoc');
+            const { summary } = await runLayoutPoc({
+                variant, sizeMode, isWeb: state.isWeb, themeFonts: { ...SLIDE_THEME.fonts },
+            });
+            showSuccess(summary);
+            const bubbles = document.querySelectorAll('.success-text');
+            if (bubbles.length) bubbles[bubbles.length - 1].style.whiteSpace = 'pre-line';
+        }
+    } catch (error) {
+        console.error('[POC] layout run failed:', error);
+        showError(`POC failed: ${error.message || error}`);
+    } finally {
+        setProcessing(false);
+    }
+}
+
 function handleSend() {
     if (!state.settingsConfirmed) {
         openSettingsModal();
@@ -583,6 +609,15 @@ function handleSend() {
     const { messageInput } = state.elements;
     const content = messageInput.value.trim();
     if (!content || state.isProcessing) return;
+
+    // POC 1 layout rendering spike — dev builds only (branch removed in production builds)
+    if (process.env.NODE_ENV !== 'production') {
+        if (content.toLowerCase().startsWith('/poc-layouts')) {
+            messageInput.value = '';
+            runLayoutPocCommand(content);
+            return;
+        }
+    }
 
     // Interactivity command detection — Option 1: explicit /command
     const matchedCommand = COMMANDS.find(c => content.toLowerCase().startsWith(c.command));
