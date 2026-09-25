@@ -1,13 +1,11 @@
-// POC 1 fixtures — candidate backend contract: AI picks `layout`, add-in fits the text.
+// Sample decks for the dev-only /dev-deck command (moved from the POC 1 spike).
 // typical  = realistic B1 English deck
-// max      = German, long compounds, at the proposed schema limits
-//            (5 bullets × ~60 chars, 4 pattern parts, 4 items per side, 8 table rows, 5 examples)
+// max      = German, long compounds, at the backend schema limits
 // overflow = deliberately over the limits, to exercise shrink → reflow → split
 
 export const FIXTURES = {
     typical: {
         title: 'Present Simple: Negatives',
-        subtitle: 'Level: B1 | 6 slides',
         slides: [
             {
                 layout: 'bullets',
@@ -71,7 +69,6 @@ export const FIXTURES = {
 
     max: {
         title: 'Trennbare Verben im Präsens: Bildung, Stellung und Ausnahmen',
-        subtitle: 'Niveau: B1 | 6 Folien | Wortschatz rund um den Lebensmitteleinkauf',
         slides: [
             {
                 layout: 'bullets',
@@ -145,7 +142,6 @@ export const FIXTURES = {
 
     overflow: {
         title: 'Trennbare und untrennbare Verben im Präsens, Perfekt und Präteritum: der vollständige Überblick',
-        subtitle: 'Niveau: B1 | 12 Folien | Wiederholung vor der Abschlussprüfung',
         slides: [
             {
                 layout: 'bullets',
@@ -231,12 +227,3 @@ export const FIXTURES = {
     },
 };
 
-// Calibration strings for the fit-accuracy check (estimate vs. PowerPoint's real wrapped height).
-export const CALIBRATION = [
-    { text: 'She doesn\'t drink coffee in the morning, but she drinks a lot of green tea at work.', pt: 24, widthFrac: 0.35 },
-    { text: 'She doesn\'t drink coffee in the morning, but she drinks a lot of green tea at work.', pt: 18, widthFrac: 0.35 },
-    { text: 'Die Sonderangebotsabteilung im Lebensmittelgeschäft ist gleich neben der Kühltheke.', pt: 24, widthFrac: 0.35 },
-    { text: 'Die Sonderangebotsabteilung im Lebensmittelgeschäft ist gleich neben der Kühltheke.', pt: 32, widthFrac: 0.5 },
-    { text: 'Im Perfekt steht -ge- zwischen Präfix und Verbstamm: eingekauft, angerufen, aufgeräumt. Bei untrennbaren Verben fällt das -ge- weg.', pt: 20, widthFrac: 0.5 },
-    { text: 'Short line.', pt: 28, widthFrac: 0.35 },
-];

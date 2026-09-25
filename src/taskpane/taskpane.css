@@ -385,6 +385,158 @@ body {
     white-space: pre-wrap;
 }
 
+/* Mini slide preview (layout slides) — mirrors src/taskpane/slides/layouts.js at taskpane scale */
+.slide-mini {
+    aspect-ratio: 16 / 9;          /* grows taller if the content needs it */
+    background: var(--bg-slide);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    font-family: var(--font-body), 'Segoe UI', sans-serif;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--text-primary);
+    word-wrap: break-word;
+    position: relative;             /* no overflow:hidden — it would stop the card growing and hide text */
+}
+
+.slide-mini--title {
+    justify-content: center;
+    padding-left: 22px;
+}
+
+.slide-mini .sm-band {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 8px;
+    background: var(--accent-primary);
+}
+
+.slide-mini .sm-deck-title {
+    font-family: var(--font-heading), 'Segoe UI', sans-serif;
+    font-size: 18px;
+    line-height: 1.2;
+}
+
+.slide-mini .sm-title {
+    font-family: var(--font-heading), 'Segoe UI', sans-serif;
+    font-size: 14px;
+    line-height: 1.2;
+}
+
+.slide-mini .sm-title-bar {
+    width: 28px;
+    height: 3px;
+    margin: 3px 0 6px;
+    background: var(--accent-primary);
+}
+
+.slide-mini .sm-body { flex: 1; }
+
+.slide-mini .sm-hl {
+    color: var(--accent-primary);
+    font-weight: 700;
+}
+
+.slide-mini .sm-bullets {
+    margin: 0;
+    padding: 0 0 0 14px;
+    border-left: 3px solid var(--accent-primary);
+    list-style: disc inside;
+}
+
+.slide-mini .sm-bullets li { margin-bottom: 2px; }
+
+.slide-mini .sm-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.slide-mini .sm-chip {
+    background: var(--accent-primary);
+    color: var(--bg-slide);
+    font-weight: 700;
+    border-radius: 6px;
+    padding: 4px 7px;
+}
+
+.slide-mini .sm-arrow { color: var(--accent-2); font-weight: 700; }
+
+.slide-mini .sm-example,
+.slide-mini .sm-callout {
+    background: var(--bg-slide-alt);
+    border-radius: 4px;
+    padding: 5px 8px;
+}
+
+.slide-mini .sm-example { font-style: italic; }
+
+.slide-mini .sm-compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+.slide-mini .sm-side { background: var(--bg-slide-alt); }
+
+.slide-mini .sm-side-head {
+    font-weight: 700;
+    text-align: center;
+    padding: 3px;
+    color: var(--bg-slide);
+    background: var(--accent-primary);
+}
+
+.slide-mini .sm-side--neutral-1 .sm-side-head { background: var(--accent-2); }
+.slide-mini .sm-side--positive .sm-side-head { background: #2E7D32; color: #fff; }
+.slide-mini .sm-side--negative .sm-side-head { background: #C62828; color: #fff; }
+.slide-mini .sm-side--positive .sm-hl { color: #2E7D32; }
+.slide-mini .sm-side--negative .sm-hl { color: #C62828; }
+
+.slide-mini .sm-side-items {
+    margin: 0;
+    padding: 4px 6px;
+    list-style: none;
+}
+
+.slide-mini .sm-side-items li { margin-bottom: 3px; }
+
+.slide-mini .sm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+}
+
+.slide-mini .sm-table th {
+    background: var(--accent-primary);
+    color: var(--bg-slide);
+    text-align: left;
+    padding: 2px 4px;
+}
+
+.slide-mini .sm-table td { padding: 2px 4px; }
+.slide-mini .sm-table tbody tr:nth-child(even) td { background: var(--bg-slide-alt); }
+.slide-mini .sm-table td:first-child { color: var(--accent-primary); font-weight: 700; }
+
+.slide-mini .sm-examples {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.slide-mini .sm-callout { border-left: 3px solid var(--accent-primary); }
+
+.slide-mini .sm-translation {
+    font-style: italic;
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
 /* Navigation buttons - 2x2 grid for narrow taskpane */
 .preview-navigation {
     display: grid;

@@ -9,8 +9,10 @@
 // Import CSS for webpack bundling
 import './taskpane.css';
 import PptxGenJS from 'pptxgenjs';
-import JSZip from 'jszip';
 import QRCode from 'qrcode';
+import { detectSlideSize, readDocumentZip, toSlideFormat } from './slides/slideSize';
+import { buildDeckBase64, insertDeckBase64 } from './slides/renderDeck';
+import { renderSlideCard, cardLabel } from './slides/previewCards';
 
 // ============================================
 // WEBSOCKET CONFIGURATION
@@ -137,9 +139,13 @@ const state = {
     pendingRequest: null,
 
     // Preview state
-    slides: [],
+    deck: null,              // { title, slides: [{ layout, … }] } from the backend — source of truth for layout slides
+    slides: [],              // preview cards: derived from `deck` ({ kind: 'title' | 'layout' }), or interactivity cards ({ title, content, type })
     currentSlideIndex: 0,
     isInPreviewMode: false,
+
+    // Deck slide size in inches ({ w, h, source }) — layout hint for the backend, real size for insert
+    slideSize: null,
 
     // Edit mode state
     originalRequest: null,
@@ -279,80 +285,20 @@ async function readPresentationTheme() {
     }
 }
 
-// Office JS returns slice data as a plain number array on Win32, ArrayBuffer elsewhere.
-function toUint8Array(data) {
-    if (data instanceof Uint8Array) return data;
-    if (data instanceof ArrayBuffer) return new Uint8Array(data);
-    if (Array.isArray(data)) return new Uint8Array(data);
-    if (typeof data === 'string') {
-        const binary = atob(data);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        return bytes;
-    }
-    throw new Error(`Unexpected slice data type: ${Object.prototype.toString.call(data)}`);
-}
-
 // Reads the PPTX file via Office API, extracts ppt/theme/theme1.xml from the ZIP,
 // and parses both the color scheme and font scheme from it. Both getThemeColorsAsync
 // and getThemeFontsAsync are not implemented in current PowerPoint builds.
+// The theme tints the taskpane/preview and gives the slide text measurer the deck's fonts.
 async function readThemeFromFile() {
-    return new Promise((resolve, reject) => {
-        console.log('[Theme] Requesting compressed PPTX file from Office...');
-        Office.context.document.getFileAsync(
-            Office.FileType.Compressed,
-            { sliceSize: 65536 },
-            async (result) => {
-                if (result.status === Office.AsyncResultStatus.Failed) {
-                    console.error('[Theme] getFileAsync failed:', result.error);
-                    reject(result.error);
-                    return;
-                }
-                try {
-                    const file = result.value;
-                    console.log(`[Theme] File opened — ${file.sliceCount} slice(s) to read.`);
-                    const slices = [];
-
-                    for (let i = 0; i < file.sliceCount; i++) {
-                        const data = await new Promise((res, rej) => {
-                            file.getSliceAsync(i, r => {
-                                if (r.status === Office.AsyncResultStatus.Succeeded) res(r.value.data);
-                                else rej(r.error);
-                            });
-                        });
-                        // Win32 desktop returns a plain number array, not ArrayBuffer — normalize here
-                        slices.push(toUint8Array(data));
-                    }
-                    file.closeAsync();
-
-                    const totalLength = slices.reduce((sum, s) => sum + s.length, 0);
-                    console.log(`[Theme] File read — total ${(totalLength / 1024).toFixed(1)} KB across ${slices.length} slice(s).`);
-
-                    const combined = new Uint8Array(totalLength);
-                    let offset = 0;
-                    for (const slice of slices) {
-                        combined.set(slice, offset);
-                        offset += slice.length;
-                    }
-
-                    const zip = await JSZip.loadAsync(combined);
-                    const themeEntry = zip.file('ppt/theme/theme1.xml');
-                    if (!themeEntry) {
-                        console.warn('[Theme] ppt/theme/theme1.xml not found in ZIP.');
-                        resolve({});
-                        return;
-                    }
-
-                    const xml = await themeEntry.async('string');
-                    console.log(`[Theme] theme1.xml extracted (${xml.length} chars).`);
-                    resolve(parseThemeXml(xml));
-                } catch (err) {
-                    console.error('[Theme] Error processing PPTX ZIP:', err);
-                    reject(err);
-                }
-            }
-        );
-    });
+    const zip = await readDocumentZip();
+    const themeEntry = zip.file('ppt/theme/theme1.xml');
+    if (!themeEntry) {
+        console.warn('[Theme] ppt/theme/theme1.xml not found in ZIP.');
+        return {};
+    }
+    const xml = await themeEntry.async('string');
+    console.log(`[Theme] theme1.xml extracted (${xml.length} chars).`);
+    return parseThemeXml(xml);
 }
 
 // Extracts colors and fonts from OOXML theme XML.
@@ -404,6 +350,7 @@ function parseThemeXml(xml) {
 function initializeTaskpane() {
     console.log('[Init] Taskpane initializing. Default theme colors:', SLIDE_THEME.colors.title, '| fonts:', SLIDE_THEME.fonts);
     applyCSSVariables();
+    refreshSlideSize();
 
     // Cache DOM elements
     state.elements = {
@@ -574,29 +521,32 @@ function setupEventListeners() {
 // MESSAGE HANDLING
 // ============================================
 
-// POC 1: /poc-layouts [typical|max|overflow] [match|default] — see doc/poc-1-rendering-results.md
-async function runLayoutPocCommand(content) {
-    const [, variant = 'typical', sizeMode = 'match'] = content.split(/\s+/);
+// Slide size of the open deck — cached; refreshed at start-up, on New Chat and before every insert.
+async function refreshSlideSize() {
+    try {
+        state.slideSize = await detectSlideSize(state.isWeb);
+        console.log(`[SlideSize] ${state.slideSize.w.toFixed(2)}×${state.slideSize.h.toFixed(2)}in via ${state.slideSize.source}`);
+    } catch (err) {
+        console.warn('[SlideSize] detection failed, backend gets its 16:9 default:', err);
+    }
+    return state.slideSize;
+}
+
+// Dev builds only: /dev-deck [typical|max|overflow] — sample decks through the real preview + insert path.
+async function runDevDeckCommand(content) {
+    const [, variant = 'typical'] = content.split(/\s+/);
     state.elements.welcomeState.classList.add('hidden');
     addUserMessage(content);
-    setProcessing(true);
-    try {
-        // Constant condition: webpack drops this block (and the poc chunk) from production builds.
-        if (process.env.NODE_ENV !== 'production') {
-            await readPresentationTheme();
-            const { runLayoutPoc } = await import(/* webpackChunkName: "poc-layouts" */ './poc/layoutPoc');
-            const { summary } = await runLayoutPoc({
-                variant, sizeMode, isWeb: state.isWeb, themeFonts: { ...SLIDE_THEME.fonts },
-            });
-            showSuccess(summary);
-            const bubbles = document.querySelectorAll('.success-text');
-            if (bubbles.length) bubbles[bubbles.length - 1].style.whiteSpace = 'pre-line';
+    // Constant condition: webpack drops this block (and the fixtures chunk) from production builds.
+    if (process.env.NODE_ENV !== 'production') {
+        const { FIXTURES } = await import(/* webpackChunkName: "dev-fixtures" */ './slides/devFixtures');
+        const fixture = FIXTURES[variant];
+        if (!fixture) {
+            showError(`Unknown sample deck "${variant}". Use typical, max or overflow.`);
+            return;
         }
-    } catch (error) {
-        console.error('[POC] layout run failed:', error);
-        showError(`POC failed: ${error.message || error}`);
-    } finally {
-        setProcessing(false);
+        await readPresentationTheme();
+        showDeckPreview(JSON.parse(JSON.stringify(fixture)));
     }
 }
 
@@ -610,11 +560,11 @@ function handleSend() {
     const content = messageInput.value.trim();
     if (!content || state.isProcessing) return;
 
-    // POC 1 layout rendering spike — dev builds only (branch removed in production builds)
+    // Sample decks for testing the renderer — dev builds only (branch removed in production builds)
     if (process.env.NODE_ENV !== 'production') {
-        if (content.toLowerCase().startsWith('/poc-layouts')) {
+        if (content.toLowerCase().startsWith('/dev-deck')) {
             messageInput.value = '';
-            runLayoutPocCommand(content);
+            runDevDeckCommand(content);
             return;
         }
     }
@@ -673,11 +623,17 @@ function handleSend() {
 
 function handleEditSend(editInstruction) {
     const { messageInput } = state.elements;
-    const slideIndex = state.editingSlideIndex;
-    const currentSlide = state.slides[slideIndex];
+    const cardIndex = state.editingSlideIndex;
+    // The backend edits one slide of deck.slides; the title card has no layout and can't be edited.
+    const slideIndex = deckSlideIndex(cardIndex);
+    const currentSlide = slideIndex === null ? null : state.deck?.slides[slideIndex];
+    if (!currentSlide) {
+        addAIMessage('The title slide can\'t be edited — go to a content slide to edit it.');
+        return;
+    }
 
     // Show user message before preview
-    const messageContent = `Edit slide ${slideIndex + 1}: ${editInstruction}`;
+    const messageContent = `Edit slide ${cardIndex + 1}: ${editInstruction}`;
     const template = document.getElementById('userMessageTemplate');
     const clone = template.content.cloneNode(true);
     const messageEl = clone.querySelector('.message-user');
@@ -716,6 +672,7 @@ function handleNewChat() {
     state.pendingActivity = null;
     exitInteractivityMode();
     detachBook();
+    refreshSlideSize();
 
     hidePreviewArea();
 
@@ -804,6 +761,8 @@ function sendWebSocketMessage(message) {
                 'native-language': 'No',
                 'age-group': state.settings.ageGroup || null
             },
+            // Layout hint for the AI; the backend assumes 16:9 when it's missing
+            ...(state.slideSize && { 'slide-format': toSlideFormat(state.slideSize) }),
             ...(message.edit && { edit: message.edit }),
             ...(message.type === 'interactivity' && { interactivity: message.interactivity }),
             ...(state.attachedBook?.status === 'ready' && { 'book-ids': [state.attachedBook.vectorStoreId] })
@@ -849,15 +808,15 @@ async function handleWebSocketMessage(data) {
             return;
         }
 
-        // Edit response
+        // Edit response — edit.slideIndex is an index into deck.slides
         if (message.type === 'edit' && message.edit) {
             const slideIndex = message.edit.slideIndex;
-            const existingSlide = state.slides[slideIndex];
-            const transformedSlide = transformEditedSlide(message.edit.slide, 'conversation', existingSlide);
+            const slide = message.edit.slide;
 
-            if (transformedSlide && slideIndex >= 0 && slideIndex < state.slides.length) {
-                state.slides[slideIndex] = transformedSlide;
-                state.currentSlideIndex = slideIndex;
+            if (state.deck && slide && slideIndex >= 0 && slideIndex < state.deck.slides.length) {
+                state.deck.slides[slideIndex] = slide;
+                syncCardsFromDeck();
+                state.currentSlideIndex = cardIndexForDeckSlide(slideIndex);
                 updateSlideDisplay();
                 hideProgress();
                 setProcessing(false);
@@ -885,46 +844,19 @@ async function handleWebSocketMessage(data) {
             return;
         }
 
-        // NEW — Handle unified conversation response (slide-title + content schema)
+        // Generated deck: { title, slides: [{ layout, "slide-title", … }], conversation-id }
         if (message.slides) {
             state.conversationId = message['conversation-id'];
             console.log(`[WS] Received ${message.slides.length} slide(s) from backend. Title: "${message.title}"`);
-            const slides = transformConversationResponse(message);
-            if (slides && slides.length > 0) {
-                console.log(`[WS] Transformed to ${slides.length} slide(s) for preview.`);
+            if (message.slides.length > 0) {
                 await readPresentationTheme();
-                showSlidePreview(slides, message.title || 'Generated Content');
+                showDeckPreview({ title: message.title || null, slides: message.slides });
             } else {
                 showError('No slides generated. Please try a different request.');
                 setProcessing(false);
             }
             return;
         }
-
-        // OLD — Route by type (vocabulary, grammar, quiz, homework) — commented out
-        // if (message.type) {
-        //     const slides = transformResponseByType(message);
-        //     if (slides && slides.length > 0) {
-        //         const titles = { vocabulary: 'Vocabulary', grammar: 'Grammar', quiz: 'Quiz', homework: 'Homework' };
-        //         showSlidePreview(slides, message.title || titles[message.type] || 'Generated Content');
-        //     } else {
-        //         showError(`No ${message.type} content generated. Please try a different request.`);
-        //         setProcessing(false);
-        //     }
-        //     return;
-        // }
-
-        // OLD — Legacy fallback — commented out
-        // if (message.slides || message.data) {
-        //     const slides = transformBackendSlides(message.slides || message.data);
-        //     if (slides && slides.length > 0) {
-        //         showSlidePreview(slides, message.summary || 'Generated Slides');
-        //     } else {
-        //         showError('No slides generated. Please try a different request.');
-        //         setProcessing(false);
-        //     }
-        //     return;
-        // }
 
         if (message.error || message.message) {
             hideProgress();
@@ -945,205 +877,35 @@ async function handleWebSocketMessage(data) {
 }
 
 // ============================================
-// TRANSFORM FUNCTIONS
+// DECK → PREVIEW CARDS
 // ============================================
 
-// OLD section - deprecated
-function transformResponseByType(message) {
-    switch (message.type) {
-        case 'vocabulary': return transformVocabularyToSlides(message);
-        case 'grammar': return transformGrammarToSlides(message);
-        case 'quiz': return transformQuizToSlides(message);
-        case 'homework': return transformHomeworkToSlides(message);
-        default: return transformBackendSlides(message.slides || message.data || []);
-    }
+// Preview cards: the title card (when the deck has a title) followed by one card per AI slide.
+function syncCardsFromDeck() {
+    const { deck } = state;
+    state.slides = deck
+        ? [
+            ...(deck.title ? [{ kind: 'title', title: deck.title }] : []),
+            ...deck.slides.map((slide) => ({ kind: 'layout', slide })),
+        ]
+        : [];
 }
 
-// OLD section - deprecated
-function transformBackendSlides(backendSlides) {
-    if (!backendSlides || !Array.isArray(backendSlides)) return [];
-    return backendSlides.map(slide => ({
-        type: slide.type || 'Content',
-        title: slide.title || '',
-        subtitle: slide.subtitle || '',
-        content: slide.content || slide.body || '',
-        example: slide.example || slide['example-sentence'] || ''
-    }));
+// Card index → index into deck.slides (null for the title card).
+function deckSlideIndex(cardIndex) {
+    if (!state.deck) return null;
+    const offset = state.deck.title ? 1 : 0;
+    return cardIndex >= offset ? cardIndex - offset : null;
 }
 
-function transformConversationResponse(message) {
-    // Transforms the unified conversation-content.edn response schema:
-    // { title, subtitle, slides: [{ "slide-title", content }] }
-    const slides = [];
-
-    if (message.title) {
-        slides.push({
-            type: 'Title',
-            title: message.title,
-            subtitle: message.subtitle || '',
-            content: '',
-            example: ''
-        });
-    }
-
-    if (message.slides && Array.isArray(message.slides)) {
-        message.slides.forEach(slide => {
-            slides.push({
-                type: 'Content',
-                title: slide['slide-title'] || slide.title || '',
-                subtitle: slide.subtitle || '',
-                content: slide.content || '',
-                example: slide.example || ''
-            });
-        });
-    }
-
-    return slides;
+function cardIndexForDeckSlide(slideIndex) {
+    return slideIndex + (state.deck?.title ? 1 : 0);
 }
 
-// Single-item transforms
-// OLD section - deprecated
-function transformSingleVocabularySlide(wordData) {
-    return {
-        type: 'Vocabulary',
-        title: wordData.word || wordData.title || '',
-        subtitle: wordData.translation || wordData.subtitle || '',
-        content: wordData.definition || wordData.content || '',
-        example: wordData.example || ''
-    };
-}
-
-// OLD section - deprecated
-function transformSingleGrammarSlide(slideData) {
-    let contentText = '';
-    if (typeof slideData.content === 'string') {
-        contentText = slideData.content;
-    } else if (typeof slideData.content === 'object' && slideData.content !== null) {
-        contentText = slideData.content.explanation || '';
-    }
-
-    let exampleText = '';
-    const examples = slideData.examples || (slideData.content && slideData.content.examples) || [];
-    if (Array.isArray(examples)) {
-        examples.forEach(ex => {
-            if (ex.sentence) {
-                exampleText += ex.sentence;
-                if (ex.translation) exampleText += ` → ${ex.translation}`;
-                exampleText += '\n';
-            }
-        });
-    }
-
-    return {
-        type: 'Grammar',
-        title: slideData['slide-title'] || slideData.slideTitle || slideData.title || 'Grammar Rule',
-        subtitle: '',
-        content: contentText.trim(),
-        example: exampleText.trim()
-    };
-}
-
-// OLD section - deprecated
-function transformSingleQuizSlide(questionData, title = 'Question') {
-    const groupedQuestions = questionData['slide-questions'] || questionData.slideQuestions;
-    if (groupedQuestions && Array.isArray(groupedQuestions)) {
-        let contentText = '';
-        groupedQuestions.forEach((q, i) => {
-            contentText += `${i + 1}. ${q.question || ''}\n`;
-            if (q.options && Array.isArray(q.options)) {
-                q.options.forEach((opt, j) => {
-                    contentText += `   ${String.fromCharCode(65 + j)}. ${opt}\n`;
-                });
-            }
-            contentText += '\n';
-        });
-        return { type: 'Quiz', title: questionData.title || title, subtitle: '', content: contentText.trim(), example: '' };
-    }
-
-    let contentText = (questionData.question || '') + '\n\n';
-    if (questionData.options && Array.isArray(questionData.options)) {
-        questionData.options.forEach((opt, i) => {
-            contentText += `${String.fromCharCode(65 + i)}. ${opt}\n`;
-        });
-    }
-    return { type: 'Quiz', title: questionData.title || title, subtitle: '', content: contentText.trim(), example: '' };
-}
-
-// OLD section - deprecated
-function transformSingleHomeworkSlide(taskData, title = 'Task') {
-    let contentText = '';
-    if (taskData.instruction) contentText += `${taskData.instruction}\n\n`;
-    if (taskData.items && Array.isArray(taskData.items)) {
-        taskData.items.forEach((item, i) => { contentText += `${i + 1}. ${item}\n`; });
-    }
-    return { type: 'Homework', title: taskData.title || title, subtitle: taskData.instruction || '', content: contentText.trim(), example: '' };
-}
-
-// Multi-slide transforms
-// OLD section - deprecated
-function transformVocabularyToSlides(vocabData) {
-    const slides = [{ type: 'Title', title: vocabData.title || 'Vocabulary', subtitle: vocabData.subtitle || '', content: '' }];
-    if (vocabData.words && Array.isArray(vocabData.words)) {
-        vocabData.words.forEach(word => slides.push(transformSingleVocabularySlide(word)));
-    }
-    return slides;
-}
-
-// OLD section - deprecated
-function transformGrammarToSlides(grammarData) {
-    const slides = [{ type: 'Title', title: grammarData.title || 'Grammar', subtitle: grammarData.subtitle || '', content: '' }];
-    if (grammarData.slides && Array.isArray(grammarData.slides)) {
-        grammarData.slides.forEach(slide => slides.push(transformSingleGrammarSlide(slide)));
-    }
-    return slides;
-}
-
-// OLD section - deprecated
-function transformQuizToSlides(quizData) {
-    const slides = [{
-        type: 'Title',
-        title: quizData.title || 'Quiz',
-        subtitle: quizData.subtitle || '',
-        content: `Type: ${quizData['quiz-type'] || 'Multiple Choice'} | Focus: ${quizData.focus || 'General'}`
-    }];
-    if (quizData.questions && Array.isArray(quizData.questions)) {
-        let questionNum = 0;
-        quizData.questions.forEach(q => {
-            const grouped = q['slide-questions'] || q.slideQuestions;
-            if (grouped && Array.isArray(grouped)) {
-                const from = questionNum + 1;
-                questionNum += grouped.length;
-                slides.push(transformSingleQuizSlide(q, `Questions ${from}–${questionNum}`));
-            } else if (q.question) {
-                questionNum++;
-                slides.push(transformSingleQuizSlide(q, `Question ${questionNum}`));
-            }
-        });
-    }
-    return slides;
-}
-
-// OLD section - deprecated
-function transformHomeworkToSlides(homeworkData) {
-    const slides = [{
-        type: 'Title',
-        title: homeworkData.title || 'Homework',
-        subtitle: homeworkData.subtitle || '',
-        content: `Type: ${homeworkData['homework-type'] || 'Exercise'} | Focus: ${homeworkData.focus || 'General'}`
-    }];
-    if (homeworkData.tasks && Array.isArray(homeworkData.tasks)) {
-        homeworkData.tasks.forEach((task, index) => slides.push(transformSingleHomeworkSlide(task, `Task ${index + 1}`)));
-    }
-    return slides;
-}
-
-function transformEditedSlide(slideData, originalType, existingSlide = null) {
-    return {
-        type: existingSlide?.type || 'Content',
-        title: slideData['slide-title'] || '',
-        subtitle: existingSlide?.subtitle || '',
-        content: slideData.content || ''
-    };
+function showDeckPreview(deck) {
+    state.deck = deck;
+    syncCardsFromDeck();
+    showSlidePreview(state.slides, deck.title || 'Generated Content');
 }
 
 // ============================================
@@ -1211,6 +973,7 @@ function hidePreviewArea() {
     if (state.previewElement && state.previewElement.parentNode) {
         state.previewElement.remove();
     }
+    state.deck = null;
     state.slides = [];
     state.previewElement = null;
     state.isInPreviewMode = false;
@@ -1221,6 +984,7 @@ function dismissPreview(message) {
         state.previewElement.remove();
     }
     addAIMessage(message);
+    state.deck = null;
     state.slides = [];
     state.previewElement = null;
     state.isInPreviewMode = false;
@@ -1268,17 +1032,28 @@ function updateSlideDisplay() {
 
     previewEl.querySelector('.slide-counter-text').textContent =
         `Slide ${state.currentSlideIndex + 1} of ${state.slides.length}`;
-    previewEl.querySelector('.slide-type-badge').textContent = slide.type || 'Content';
-    previewEl.querySelector('.slide-card-title').textContent = slide.title || '';
-    previewEl.querySelector('.slide-card-subtitle').textContent = slide.subtitle || '';
-    previewEl.querySelector('.slide-card-content').textContent = slide.content || '';
 
-    const exampleEl = previewEl.querySelector('.slide-card-example');
-    if (slide.example) {
-        exampleEl.textContent = slide.example;
-        exampleEl.classList.remove('hidden');
+    const miniContainer = previewEl.querySelector('.slide-mini-container');
+    const textCard = previewEl.querySelector('.slide-card');
+    const editBtn = previewEl.querySelector('#navEditBtn');
+
+    if (slide.kind) {
+        // Layout slide / deck title — mini slide preview
+        previewEl.querySelector('.slide-type-badge').textContent = cardLabel(slide);
+        renderSlideCard(miniContainer, slide);
+        miniContainer.classList.remove('hidden');
+        textCard.classList.add('hidden');
+        // The title slide has no layout for the backend to edit
+        editBtn.classList.toggle('hidden', slide.kind === 'title');
     } else {
-        exampleEl.classList.add('hidden');
+        // Interactivity question — plain text card
+        miniContainer.classList.add('hidden');
+        textCard.classList.remove('hidden');
+        previewEl.querySelector('.slide-type-badge').textContent = slide.type || 'Content';
+        previewEl.querySelector('.slide-card-title').textContent = slide.title || '';
+        previewEl.querySelector('.slide-card-subtitle').textContent = '';
+        previewEl.querySelector('.slide-card-content').textContent = slide.content || '';
+        previewEl.querySelector('.slide-card-example').classList.add('hidden');
     }
 
     const backBtn = previewEl.querySelector('#navBackBtn');
@@ -1348,12 +1123,15 @@ function removeSlide() {
     if (state.pendingActivity) return;
 
     if (state.slides.length <= 1) {
-        state.slides.splice(0, 1);
         dismissPreview('All slides removed.');
         return;
     }
 
-    state.slides.splice(state.currentSlideIndex, 1);
+    // Remove from the deck (source of truth), then rebuild the cards
+    const slideIndex = deckSlideIndex(state.currentSlideIndex);
+    if (slideIndex === null) state.deck.title = null;   // the title card: insert without a title slide
+    else state.deck.slides.splice(slideIndex, 1);
+    syncCardsFromDeck();
     if (state.currentSlideIndex >= state.slides.length) {
         state.currentSlideIndex = state.slides.length - 1;
     }
@@ -1366,23 +1144,22 @@ function removeSlide() {
 
 function editSlide() {
     if (state.pendingActivity) return;
+    if (deckSlideIndex(state.currentSlideIndex) === null) return; // title card — nothing for the backend to edit
 
-    const { messageInput, typeSelector } = state.elements;
+    const { messageInput } = state.elements;
     state.isEditMode = true;
     state.editingSlideIndex = state.currentSlideIndex;
     messageInput.placeholder = `Describe what to change on slide ${state.currentSlideIndex + 1}...`;
     messageInput.value = '';
-    if (typeSelector) typeSelector.classList.add('hidden');
     showEditBadge(state.currentSlideIndex + 1);
     messageInput.focus();
 }
 
 function exitEditMode() {
-    const { messageInput, typeSelector } = state.elements;
+    const { messageInput } = state.elements;
     state.isEditMode = false;
     state.editingSlideIndex = null;
     messageInput.placeholder = 'Type your request...';
-    if (typeSelector) typeSelector.classList.remove('hidden');
     removeEditBadge();
 }
 
@@ -1598,6 +1375,7 @@ function buildInteractivityPreviewSlides(activity, questions) {
 
 function showInteractivityPreview(activity) {
     state.pendingActivity = activity;
+    state.deck = null;
 
     const questions = activity.questions || [];
     const slides = buildInteractivityPreviewSlides(activity, questions);
@@ -1613,7 +1391,7 @@ async function handleAddInteractivityToSlide(activity) {
     showProgressInPreviewArea('Building activity slide...');
 
     try {
-        const base64 = await buildInteractivityPptxBase64(activity);
+        const base64 = await buildInteractivityPptxBase64(activity, await refreshSlideSize());
 
         await PowerPoint.run(async (context) => {
             const presentation = context.presentation;
@@ -1783,128 +1561,42 @@ function handleCommandAutocompleteKeydown(e) {
 }
 
 // ============================================
-// WEB: COPY ALL SLIDES TO CLIPBOARD (fallback if insert API fails)
+// POWERPOINT SLIDE INSERTION
 // ============================================
 
-/* async function copyAllSlides() {
-    const lines = [];
-
-    state.slides.forEach((slide, i) => {
-        if (i === 0 && slide.type === 'Title') {
-            lines.push(`=== ${slide.title} ===`);
-            if (slide.subtitle) lines.push(slide.subtitle);
-        } else {
-            lines.push(`--- Slide ${i + 1}: ${slide.title} ---`);
-            if (slide.subtitle) lines.push(slide.subtitle);
-            if (slide.content) lines.push(slide.content);
-            if (slide.example) lines.push(`Example: ${slide.example}`);
-        }
-        lines.push('');
-    });
-
-    const text = lines.join('\n').trim();
-
-    try {
-        await navigator.clipboard.writeText(text);
-        showSuccess('Copied! Paste the content into your slides.');
-    } catch (_err) {
-        // navigator.clipboard is blocked in Office add-in iframes — fall back to execCommand
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        const ok = document.execCommand('copy');
-        document.body.removeChild(ta);
-        if (ok) {
-            showSuccess('Copied! Paste the content into your slides.');
-        } else {
-            showError('Could not copy to clipboard. Please copy the content manually.');
-        }
-    }
-} */
-
-// ============================================
-// POWERPOINT SLIDE INSERTION (Direct API)
-// ============================================
-
+// One path on desktop and web: build a .pptx at the deck's real size with the layout drawers
+// (src/taskpane/slides/), then insertSlidesFromBase64 with the destination theme.
 async function insertAllSlides() {
     if (state.pendingActivity) {
         await handleAddInteractivityToSlide(state.pendingActivity);
         return;
     }
 
-    if (state.slides.length === 0) {
+    const deck = state.deck;
+    if (!deck || (!deck.title && deck.slides.length === 0)) {
         showError('No slides to insert.');
         return;
     }
 
     await readPresentationTheme();
 
-    const slidesToInsert = [...state.slides];
-    console.log(`[Insert] Inserting ${slidesToInsert.length} slide(s). Mode: ${state.isWeb ? 'web (PptxGenJS)' : 'desktop (Office API)'}`);
-
     if (state.isEditMode) exitEditMode();
     hidePreviewArea();
 
     setProcessing(true);
-    showProgressInPreviewArea('Inserting slides...');
+    showProgressInPreviewArea('Building slides...');
 
     try {
-        if (state.isWeb) {
-            updateProgressInPreviewArea('Building slides...');
-            const base64 = await buildPptxBase64(slidesToInsert);
-            await PowerPoint.run(async (context) => {
-                const presentation = context.presentation;
-                presentation.slides.load('items/id');
-                await context.sync();
+        const size = (await refreshSlideSize()) || { w: 13.333, h: 7.5 };
+        const { base64, slideCount, splits, skipped } = await buildDeckBase64(deck, size, SLIDE_THEME.fonts);
+        console.log(`[Insert] ${slideCount} slide(s) at ${size.w.toFixed(2)}×${size.h.toFixed(2)}in — ${splits} split, ${skipped} skipped.`);
 
-                const items = presentation.slides.items;
-                const lastSlideId = items.length > 0 ? items[items.length - 1].id : undefined;
+        updateProgressInPreviewArea('Inserting slides...');
+        await insertDeckBase64(base64);
 
-                presentation.insertSlidesFromBase64(base64, {
-                    formatting: 'UseDestinationTheme',
-                    targetSlideId: lastSlideId,
-                });
-                await context.sync();
-            });
-        } else {
-            await PowerPoint.run(async (context) => {
-                const presentation = context.presentation;
-
-                for (let i = 0; i < slidesToInsert.length; i++) {
-                    const slideData = slidesToInsert[i];
-
-                    updateProgressInPreviewArea(`Inserting slide ${i + 1} of ${slidesToInsert.length}...`);
-
-                    presentation.slides.add();
-                    await context.sync();
-
-                    presentation.slides.load('items');
-                    await context.sync();
-
-                    const slide = presentation.slides.items[presentation.slides.items.length - 1];
-
-                    slide.shapes.load('items');
-                    await context.sync();
-
-                    const shapesToDelete = slide.shapes.items.slice();
-                    for (const shape of shapesToDelete) {
-                        shape.delete();
-                    }
-                    await context.sync();
-
-                    await createSlideContent(slide, slideData, context);
-                }
-
-                await context.sync();
-            });
-        }
-
-        console.log(`[Insert] Done — ${slidesToInsert.length} slide(s) inserted successfully.`);
         hideProgress();
-        showSuccess(`${slidesToInsert.length} slide${slidesToInsert.length !== 1 ? 's' : ''} inserted successfully`);
+        const splitNote = splits > 0 ? ` (${splits} split to fit)` : '';
+        showSuccess(`${slideCount} slide${slideCount !== 1 ? 's' : ''} inserted successfully${splitNote}`);
         const fbStats = getFeedbackStats();
         saveFeedbackStats({ ...fbStats, insertCount: fbStats.insertCount + 1 });
         setProcessing(false);
@@ -1917,138 +1609,17 @@ async function insertAllSlides() {
     }
 }
 
-async function createSlideContent(slide, slideData, context) {
-    const isTitle = slideData.type === 'Title';
-    console.log(`[Insert] createSlideContent — type: ${slideData.type}, title color: ${SLIDE_THEME.colors.title}, content color: ${SLIDE_THEME.colors.content}, font: ${SLIDE_THEME.fonts.heading}`);
-
-    // Title
-    const titleShape = slide.shapes.addTextBox(slideData.title || '');
-    titleShape.left = 50;
-    titleShape.top = isTitle ? 180 : 40;
-    titleShape.width = 620;
-    titleShape.height = isTitle ? 80 : 60;
-    await context.sync();
-
-    titleShape.textFrame.textRange.font.name = SLIDE_THEME.fonts.heading;
-    titleShape.textFrame.textRange.font.bold = true;
-    titleShape.textFrame.textRange.font.size = isTitle ? 44 : 32;
-    titleShape.textFrame.textRange.font.color = SLIDE_THEME.colors.title;
-    if (isTitle) titleShape.textFrame.horizontalAlignment = 'Center';
-    await context.sync();
-
-    // Subtitle
-    if (slideData.subtitle) {
-        const subtitleShape = slide.shapes.addTextBox(slideData.subtitle);
-        subtitleShape.left = 50;
-        subtitleShape.top = isTitle ? 270 : 100;
-        subtitleShape.width = 620;
-        subtitleShape.height = 40;
-        await context.sync();
-
-        subtitleShape.textFrame.textRange.font.name = SLIDE_THEME.fonts.body;
-        subtitleShape.textFrame.textRange.font.size = isTitle ? 24 : 20;
-        subtitleShape.textFrame.textRange.font.color = SLIDE_THEME.colors.subtitle;
-        if (isTitle) subtitleShape.textFrame.horizontalAlignment = 'Center';
-        await context.sync();
-    }
-
-    // Content
-    if (slideData.content && !isTitle) {
-        const contentShape = slide.shapes.addTextBox(slideData.content);
-        contentShape.left = 50;
-        contentShape.top = 160;
-        contentShape.width = 620;
-        contentShape.height = 100;
-        await context.sync();
-
-        contentShape.textFrame.textRange.font.name = SLIDE_THEME.fonts.body;
-        contentShape.textFrame.textRange.font.size = 18;
-        contentShape.textFrame.textRange.font.color = SLIDE_THEME.colors.content;
-        await context.sync();
-    }
-
-    // Example
-    if (slideData.example && !isTitle) {
-        const exampleShape = slide.shapes.addTextBox(slideData.example);
-        exampleShape.left = 50;
-        exampleShape.top = 280;
-        exampleShape.width = 620;
-        exampleShape.height = 60;
-        await context.sync();
-
-        exampleShape.textFrame.textRange.font.name = SLIDE_THEME.fonts.body;
-        exampleShape.textFrame.textRange.font.size = 16;
-        exampleShape.textFrame.textRange.font.italic = true;
-        exampleShape.textFrame.textRange.font.color = SLIDE_THEME.colors.subtitle;
-        await context.sync();
-    }
-}
-
-async function buildPptxBase64(slides) {
-    const pt = (v) => +(v / 72).toFixed(4); // Office JS points → PptxGenJS inches
-    const c = (hex) => hex.slice(1);         // PptxGenJS expects colors without #
-    const pptx = new PptxGenJS();
-
-    for (const slideData of slides) {
-        const isTitle = slideData.type === 'Title';
-        const slide = pptx.addSlide();
-
-        // Title
-        slide.addText(slideData.title || '', {
-            x: pt(50), y: pt(isTitle ? 180 : 40),
-            w: pt(620), h: pt(isTitle ? 80 : 60),
-            fontSize: isTitle ? 44 : 32,
-            bold: true,
-            fontFace: SLIDE_THEME.fonts.heading,
-            color: c(SLIDE_THEME.colors.title),
-            align: isTitle ? 'center' : 'left',
-            wrap: true,
-        });
-
-        // Subtitle
-        if (slideData.subtitle) {
-            slide.addText(slideData.subtitle, {
-                x: pt(50), y: pt(isTitle ? 270 : 100),
-                w: pt(620), h: pt(40),
-                fontSize: isTitle ? 24 : 20,
-                fontFace: SLIDE_THEME.fonts.body,
-                color: c(SLIDE_THEME.colors.subtitle),
-                align: isTitle ? 'center' : 'left',
-                wrap: true,
-            });
-        }
-
-        // Content
-        if (slideData.content && !isTitle) {
-            slide.addText(slideData.content, {
-                x: pt(50), y: pt(160),
-                w: pt(620), h: pt(100),
-                fontSize: 18,
-                fontFace: SLIDE_THEME.fonts.body,
-                color: c(SLIDE_THEME.colors.content),
-                wrap: true,
-            });
-        }
-
-        // Example
-        if (slideData.example && !isTitle) {
-            slide.addText(slideData.example, {
-                x: pt(50), y: pt(280),
-                w: pt(620), h: pt(60),
-                fontSize: 16,
-                italic: true,
-                fontFace: SLIDE_THEME.fonts.body,
-                color: c(SLIDE_THEME.colors.subtitle),
-                wrap: true,
-            });
-        }
-    }
-
-    return await pptx.write('base64');
-}
-
-async function buildInteractivityPptxBase64(activity) {
-    const pt = (v) => +(v / 72).toFixed(4);
+async function buildInteractivityPptxBase64(activity, size) {
+    // Designed on a 10×5.625in (720×405pt) canvas; scaled uniformly and centred on the deck's real size.
+    const W = size?.w || 10;
+    const H = size?.h || 5.625;
+    const scale = Math.min(W / 10, H / 5.625);
+    const ox = (W - 10 * scale) / 2;
+    const oy = (H - 5.625 * scale) / 2;
+    const sz = (v) => +((v / 72) * scale).toFixed(4);   // Office JS points → PptxGenJS inches
+    const px = (v) => +(ox + sz(v)).toFixed(4);
+    const py = (v) => +(oy + sz(v)).toFixed(4);
+    const fs = (v) => Math.round(v * scale);
     const c = (hex) => hex.slice(1);
     const meta = INTERACTIVITY_MODE_LABELS[activity.mode] || INTERACTIVITY_MODE_LABELS['multiple-choice'];
 
@@ -2056,20 +1627,22 @@ async function buildInteractivityPptxBase64(activity) {
     const qrDataUrl = await QRCode.toDataURL(gameUrl, { width: 300, margin: 1 });
 
     const pptx = new PptxGenJS();
+    pptx.defineLayout({ name: 'DEST', width: W, height: H });
+    pptx.layout = 'DEST';
     const slide = pptx.addSlide();
 
     // Left — QR code
     slide.addImage({
         data: qrDataUrl,
-        x: pt(50), y: pt(90),
-        w: pt(260), h: pt(260),
+        x: px(50), y: py(90),
+        w: sz(260), h: sz(260),
     });
 
     // Left label — "Scan to play!"
     slide.addText('Scan to play!', {
-        x: pt(50), y: pt(360),
-        w: pt(260), h: pt(30),
-        fontSize: 14,
+        x: px(50), y: py(360),
+        w: sz(260), h: sz(30),
+        fontSize: fs(14),
         bold: true,
         fontFace: SLIDE_THEME.fonts.body,
         color: c(SLIDE_THEME.colors.subtitle),
@@ -2078,9 +1651,9 @@ async function buildInteractivityPptxBase64(activity) {
 
     // Right — Activity title
     slide.addText(activity.title || meta.label, {
-        x: pt(360), y: pt(90),
-        w: pt(310), h: pt(70),
-        fontSize: 28,
+        x: px(360), y: py(90),
+        w: sz(310), h: sz(70),
+        fontSize: fs(28),
         bold: true,
         fontFace: SLIDE_THEME.fonts.heading,
         color: c(SLIDE_THEME.colors.title),
@@ -2090,18 +1663,18 @@ async function buildInteractivityPptxBase64(activity) {
     // Right — Question count
     const questionCount = activity['question-count'] || (activity.questions || []).length;
     slide.addText(`🎮  ${questionCount} ${meta.countNoun}`, {
-        x: pt(360), y: pt(170),
-        w: pt(310), h: pt(30),
-        fontSize: 16,
+        x: px(360), y: py(170),
+        w: sz(310), h: sz(30),
+        fontSize: fs(16),
         fontFace: SLIDE_THEME.fonts.body,
         color: c(SLIDE_THEME.colors.subtitle),
     });
 
     // Right — Instructions
     slide.addText(`How to join:\n1. Open your phone camera\n2. Scan the QR code\n3. ${meta.joinStep3}`, {
-        x: pt(360), y: pt(230),
-        w: pt(310), h: pt(160),
-        fontSize: 16,
+        x: px(360), y: py(230),
+        w: sz(310), h: sz(160),
+        fontSize: fs(16),
         fontFace: SLIDE_THEME.fonts.body,
         color: c(SLIDE_THEME.colors.content),
         wrap: true,
