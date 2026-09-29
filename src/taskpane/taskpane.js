@@ -559,6 +559,10 @@ function handleSend() {
     const { messageInput } = state.elements;
     const content = messageInput.value.trim();
     if (!content || state.isProcessing) return;
+    if (isBookPending()) {
+        flagBookPending();
+        return;
+    }
 
     // Sample decks for testing the renderer — dev builds only (branch removed in production builds)
     if (process.env.NODE_ENV !== 'production') {
@@ -1306,9 +1310,10 @@ function renderBookChip() {
     if (!bookChip) return;
 
     const book = state.attachedBook;
+    updateInputState();
     if (!book) {
         bookChip.classList.add('hidden');
-        bookChip.classList.remove('book-chip-processing');
+        bookChip.classList.remove('book-chip-processing', 'book-chip-blocked');
         if (attachBookBtn) attachBookBtn.disabled = false;
         return;
     }
@@ -1319,6 +1324,7 @@ function renderBookChip() {
 
     const isProcessing = book.status === 'uploading' || book.status === 'processing';
     bookChip.classList.toggle('book-chip-processing', isProcessing);
+    if (!isProcessing) bookChip.classList.remove('book-chip-blocked');
 
     if (book.status === 'uploading') {
         bookChipIcon.textContent = 'description';
@@ -1453,6 +1459,8 @@ function showInteractivityConfirmation(originalMessage, mode) {
 }
 
 function handleInteractivityConfirmYes(e, messageEl) {
+    // A book attached after this bubble appeared — keep the bubble so it can be clicked once ready
+    if (isBookPending()) { flagBookPending(); return; }
     const mode = state.pendingInteractivityMode || 'multiple-choice';
     const meta = INTERACTIVITY_MODE_LABELS[mode] || INTERACTIVITY_MODE_LABELS['multiple-choice'];
     messageEl.textContent = `🎮 ${meta.label}`;
@@ -1464,6 +1472,7 @@ function handleInteractivityConfirmYes(e, messageEl) {
 }
 
 function handleInteractivityConfirmNo(e, messageEl) {
+    if (isBookPending()) { flagBookPending(); return; }
     messageEl.textContent = '📄 Creating slides...';
     const pending = state.pendingInteractivityRequest;
     state.pendingInteractivityRequest = null;
@@ -2009,10 +2018,39 @@ function checkAndShowNPS() {
 
 function setProcessing(isProcessing) {
     state.isProcessing = isProcessing;
-    const { messageInput } = state.elements;
+    updateInputState();
+}
 
-    messageInput.disabled = isProcessing;
-    messageInput.placeholder = isProcessing ? 'Generating content...' : 'Type your request...';
+// A book that's still uploading/processing would silently be left out of the request
+// (only 'ready' books send book-ids), so sending waits for it. Typing stays enabled.
+function isBookPending() {
+    const status = state.attachedBook?.status;
+    return status === 'uploading' || status === 'processing';
+}
+
+// Single source for the input's state — both a running generation and a pending book affect it,
+// so each of setProcessing and renderBookChip calling this keeps them from overriding each other.
+function updateInputState() {
+    const { messageInput } = state.elements;
+    if (!messageInput) return;
+
+    messageInput.disabled = state.isProcessing;
+    if (state.isProcessing) {
+        messageInput.placeholder = 'Generating content...';
+    } else if (isBookPending()) {
+        messageInput.placeholder = `Waiting for "${state.attachedBook.filename}" to finish processing…`;
+    } else {
+        messageInput.placeholder = 'Type your request...';
+    }
+}
+
+// Feedback when a send is blocked by a pending book — the placeholder isn't visible once there's text
+function flagBookPending() {
+    const { bookChip } = state.elements;
+    if (!bookChip) return;
+    bookChip.classList.remove('book-chip-blocked');
+    void bookChip.offsetWidth; // restart the animation on repeated presses
+    bookChip.classList.add('book-chip-blocked');
 }
 
 function appendToChatBody(element) {

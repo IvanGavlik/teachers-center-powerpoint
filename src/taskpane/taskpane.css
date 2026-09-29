@@ -1116,6 +1116,12 @@ body {
     color: var(--text-tertiary);
 }
 
+/* Pressed Enter while the book is still processing — sending waits for it */
+.book-chip.book-chip-blocked {
+    border-color: var(--accent-primary);
+    animation: shake 0.4s ease;
+}
+
 .book-chip-cancel {
     display: flex;
     align-items: center;
