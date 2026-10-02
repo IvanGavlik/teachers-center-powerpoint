@@ -558,7 +558,8 @@ function handleSend() {
     }
 
     const { messageInput } = state.elements;
-    const content = messageInput.value.trim();
+    const typed = messageInput.value.trim();   // shown in the chat as the teacher wrote it
+    let content = typed;                        // what goes to the backend
     if (!content || state.isProcessing) return;
     if (isBookPending()) {
         flagBookPending();
@@ -574,13 +575,18 @@ function handleSend() {
         }
     }
 
-    // Interactivity command detection — Option 1: explicit /command
-    const matchedCommand = COMMANDS.find(c => content.toLowerCase().startsWith(c.command));
-    if (matchedCommand) {
-        messageInput.value = '';
-        messageInput.style.height = 'auto';
-        enterInteractivityMode(matchedCommand.mode);
-        return;
+    // Interactivity command detection — Option 1: explicit /command.
+    // "/true-false" alone switches the mode and waits for the topic; "/true-false food vocabulary"
+    // switches it and sends "food vocabulary" as the game request right away (below).
+    const slashCommand = parseSlashCommand(content);
+    if (slashCommand?.command) {
+        enterInteractivityMode(slashCommand.command.mode);
+        if (!slashCommand.rest) {
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+            return;
+        }
+        content = slashCommand.rest;
     }
 
     // Edit mode — before keyword detection: while editing, "add a multiple choice question" or
@@ -611,7 +617,7 @@ function handleSend() {
     state.elements.welcomeState.classList.add('hidden');
 
     const usingBook = state.attachedBook?.status === 'ready';
-    addUserMessage(usingBook ? `${content}  📄 Using: ${state.attachedBook.filename}` : content);
+    addUserMessage(usingBook ? `${typed}  📄 Using: ${state.attachedBook.filename}` : typed);
     messageInput.value = '';
     messageInput.style.height = 'auto';
 
@@ -1207,6 +1213,8 @@ function removeEditBadge() {
 }
 
 function enterInteractivityMode(mode) {
+    // A game isn't an edit of the open slide — otherwise the next message would still go out as an edit
+    if (state.isEditMode) exitEditMode();
     const { interactivityChip, interactivityChipIcon, interactivityChipLabel, messageInput } = state.elements;
     state.interactivityMode = mode;
     const meta = INTERACTIVITY_MODE_LABELS[mode] || INTERACTIVITY_MODE_LABELS['multiple-choice'];
@@ -1493,6 +1501,19 @@ async function handleAddInteractivityToSlide(activity) {
 
 // ── Interactivity keyword detection ──────────────────────────────────────────
 
+// "/true-false food vocabulary" → { command: <the /true-false entry>, rest: "food vocabulary" }.
+// The command must be a whole word ("/true-falsefood" is not /true-false); an unknown one
+// ("/quiz") has command: null and is sent as normal text. Only letters and hyphens count, so
+// phonetics like "/θ/ sound" or "/r/ vs /l/" never look like a command.
+function parseSlashCommand(text) {
+    const match = /^(\/[a-z][a-z-]*)(?:\s+([\s\S]*))?$/i.exec(text);
+    if (!match) return null;
+    return {
+        command: COMMANDS.find(c => c.command === match[1].toLowerCase()) || null,
+        rest: (match[2] || '').trim()
+    };
+}
+
 function detectInteractivityMode(text) {
     const lower = text.toLowerCase();
     const match = INTERACTIVITY_KEYWORDS.find(k => lower.includes(k.keyword));
@@ -1619,9 +1640,18 @@ function handleCommandAutocompleteKeydown(e) {
     } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         highlightedCommandIndex = (highlightedCommandIndex - 1 + items.length) % items.length;
-    } else if (e.key === 'Enter' && highlightedCommandIndex >= 0) {
+    } else if (e.key === 'Enter' && (highlightedCommandIndex >= 0 || items.length === 1)) {
+        // Nothing highlighted but only one match ("/true") — that's the one meant.
+        // stopPropagation: the global Enter handler would otherwise see the now-empty input and
+        // move the open preview on (or insert it on the last slide).
         e.preventDefault();
-        selectCommand(items[highlightedCommandIndex].dataset.mode);
+        e.stopPropagation();
+        selectCommand(items[Math.max(highlightedCommandIndex, 0)].dataset.mode);
+        return;
+    } else if (e.key === 'Enter') {
+        // Several matches and none picked ("/") — don't send a half-typed command to the AI
+        e.preventDefault();
+        e.stopPropagation();
         return;
     } else if (e.key === 'Escape') {
         hideCommandsAutocomplete();
