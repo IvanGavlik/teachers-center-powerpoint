@@ -670,8 +670,7 @@ function handleNewChat() {
     setProcessing(false);
     state.conversationId = null;
     state.originalRequest = null;
-    state.editingSlideIndex = null;
-    state.isEditMode = false;
+    if (state.isEditMode) exitEditMode(); // also hides the edit badge
     state.pendingInteractivityRequest = null;
     state.pendingInteractivityMode = null;
     state.pendingActivity = null;
@@ -976,7 +975,10 @@ function updateProgressInPreviewArea(status) {
     state.progressElement.querySelector('.progress-status').textContent = status;
 }
 
+// Edit mode only makes sense with a deck preview to edit — every way the preview closes
+// (✕/Q, last slide removed, an error, insert, New chat) goes through one of these two.
 function hidePreviewArea() {
+    if (state.isEditMode) exitEditMode();
     if (state.previewElement && state.previewElement.parentNode) {
         state.previewElement.remove();
     }
@@ -987,6 +989,7 @@ function hidePreviewArea() {
 }
 
 function dismissPreview(message) {
+    if (state.isEditMode) exitEditMode();
     if (state.previewElement && state.previewElement.parentNode) {
         state.previewElement.remove();
     }
