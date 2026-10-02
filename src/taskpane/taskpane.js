@@ -179,9 +179,9 @@ const state = {
     pendingActivity: null,             // full activity payload while in interactivity preview
 
     // Attached book (file_search grounding) — one at a time, ephemeral to this session
-    attachedBook: null,                // null | { vectorStoreId, filename, status }
-    bookChangeConfirmEl: null,         // open "remove the document?" bubble, if any
+    attachedBook: null,                // null | { vectorStoreId, filename, status, sent }
                                         // status: 'uploading' | 'processing' | 'ready' | 'error'
+    bookChangeConfirmEl: null,         // open "remove the document?" bubble, if any
     bookPollTimer: null,
     bookPollAttempts: 0,
 
@@ -774,6 +774,8 @@ function sendWebSocketMessage(message) {
         };
 
         state.ws.send(JSON.stringify(wsMessage));
+        // From here on the book may be in the conversation's history (see handleBookChipCancel)
+        if (wsMessage['book-ids']) state.attachedBook.sent = true;
         return true;
     } catch (error) {
         console.error('Failed to send WebSocket message:', error);
@@ -1297,13 +1299,15 @@ async function pollBookStatus() {
     }
 }
 
-// A ready book may already be in the conversation's history (file_search passages travel with
-// previous_response_id), so removing it mid-conversation would let the next answer keep using it
-// or mix it with a newly attached book. Ask first; on yes, the conversation starts over.
+// A book that was sent may already be in the conversation's history (file_search passages travel
+// with previous_response_id), so removing it mid-conversation would let the next answer keep using
+// it or mix it with a newly attached book. Ask first; on yes, the conversation starts over.
+// Only a conversation the next message would continue counts: with a preview open, the next
+// message either edits a slide (no history) or dismisses the preview, which resets it anyway.
 function handleBookChipCancel() {
     const book = state.attachedBook;
-    if (!book || book.status !== 'ready' || !state.conversationId) {
-        detachBook(); // never used in this conversation — nothing to lose
+    if (!book || !book.sent || !state.conversationId || state.isInPreviewMode) {
+        detachBook(); // nothing in the history the next message would carry on with
         return;
     }
     if (state.bookChangeConfirmEl) return; // already asking
