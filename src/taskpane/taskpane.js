@@ -583,6 +583,13 @@ function handleSend() {
         return;
     }
 
+    // Edit mode — before keyword detection: while editing, "add a multiple choice question" or
+    // "fix the word order example" is an instruction for this slide, not a request for a game
+    if (state.isEditMode && state.editingSlideIndex !== null) {
+        handleEditSend(content);
+        return;
+    }
+
     // Interactivity keyword detection — Option 2: natural language
     const detectedMode = !state.interactivityMode ? detectInteractivityMode(content) : null;
     if (detectedMode) {
@@ -591,12 +598,6 @@ function handleSend() {
         state.elements.welcomeState.classList.add('hidden');
         addUserMessage(content);
         showInteractivityConfirmation(content, detectedMode);
-        return;
-    }
-
-    // Edit mode
-    if (state.isEditMode && state.editingSlideIndex !== null) {
-        handleEditSend(content);
         return;
     }
 
