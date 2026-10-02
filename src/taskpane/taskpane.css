@@ -1140,9 +1140,14 @@ body {
     transition: background 0.15s;
 }
 
-.book-chip-cancel:hover {
+.book-chip-cancel:hover:not(:disabled) {
     background: var(--error-text, #C43E1C);
     color: white;
+}
+
+.book-chip-cancel:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 .message-info {

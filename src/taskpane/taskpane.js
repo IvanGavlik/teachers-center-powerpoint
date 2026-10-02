@@ -180,6 +180,7 @@ const state = {
 
     // Attached book (file_search grounding) — one at a time, ephemeral to this session
     attachedBook: null,                // null | { vectorStoreId, filename, status }
+    bookChangeConfirmEl: null,         // open "remove the document?" bubble, if any
                                         // status: 'uploading' | 'processing' | 'ready' | 'error'
     bookPollTimer: null,
     bookPollAttempts: 0,
@@ -467,7 +468,7 @@ function setupEventListeners() {
         });
     }
     if (bookChipCancelBtn) {
-        bookChipCancelBtn.addEventListener('click', detachBook);
+        bookChipCancelBtn.addEventListener('click', handleBookChipCancel);
     }
 
     // Context badge opens settings
@@ -1296,7 +1297,49 @@ async function pollBookStatus() {
     }
 }
 
+// A ready book may already be in the conversation's history (file_search passages travel with
+// previous_response_id), so removing it mid-conversation would let the next answer keep using it
+// or mix it with a newly attached book. Ask first; on yes, the conversation starts over.
+function handleBookChipCancel() {
+    const book = state.attachedBook;
+    if (!book || book.status !== 'ready' || !state.conversationId) {
+        detachBook(); // never used in this conversation — nothing to lose
+        return;
+    }
+    if (state.bookChangeConfirmEl) return; // already asking
+
+    const template = document.getElementById('aiMessageTemplate');
+    const messageEl = template.content.cloneNode(true).querySelector('.message-ai');
+    messageEl.innerHTML = `
+        <div>📄 Changing the document starts a new conversation — the previous history is lost.</div>
+        <div style="margin-top: 6px;">Continue?</div>
+        <div class="interactivity-confirm-buttons">
+            <button class="interactivity-confirm-btn interactivity-confirm-yes">Remove document</button>
+            <button class="interactivity-confirm-btn interactivity-confirm-no">Keep it</button>
+        </div>
+    `;
+    messageEl.querySelector('.interactivity-confirm-yes').addEventListener('click', () => {
+        if (state.isProcessing) return; // a request sent after the bubble appeared — answer it once that's done
+        state.bookChangeConfirmEl = null;
+        if (state.attachedBook !== book) { messageEl.remove(); return; } // already changed (e.g. New chat)
+        state.conversationId = null;
+        detachBook();
+        messageEl.textContent = `📄 "${book.filename}" removed — your next message starts a new conversation, so include the topic again.`;
+    });
+    messageEl.querySelector('.interactivity-confirm-no').addEventListener('click', () => {
+        state.bookChangeConfirmEl = null;
+        messageEl.remove();
+    });
+
+    state.bookChangeConfirmEl = messageEl;
+    appendToChatBody(messageEl);
+}
+
 function detachBook() {
+    if (state.bookChangeConfirmEl) {
+        state.bookChangeConfirmEl.remove();
+        state.bookChangeConfirmEl = null;
+    }
     clearInterval(state.bookPollTimer);
     state.bookPollTimer = null;
     state.bookPollAttempts = 0;
@@ -2031,8 +2074,14 @@ function isBookPending() {
 // Single source for the input's state — both a running generation and a pending book affect it,
 // so each of setProcessing and renderBookChip calling this keeps them from overriding each other.
 function updateInputState() {
-    const { messageInput } = state.elements;
+    const { messageInput, bookChipCancelBtn } = state.elements;
     if (!messageInput) return;
+
+    // A running request may be using the ready book — its answer would carry the book into the
+    // history after it was removed, so removal waits (an uploading/processing book can still be cancelled)
+    if (bookChipCancelBtn) {
+        bookChipCancelBtn.disabled = state.isProcessing && state.attachedBook?.status === 'ready';
+    }
 
     messageInput.disabled = state.isProcessing;
     if (state.isProcessing) {
