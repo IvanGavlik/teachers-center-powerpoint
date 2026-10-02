@@ -263,8 +263,13 @@ body {
     flex-shrink: 0;
 }
 
-.progress-cancel-btn:hover {
+.progress-cancel-btn:hover:not(:disabled) {
     background: #A33517;
+}
+
+.progress-cancel-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 /* ============================================

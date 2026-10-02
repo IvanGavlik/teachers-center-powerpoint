@@ -1063,9 +1063,8 @@ function updateSlideDisplay() {
         previewEl.querySelector('.slide-card-example').classList.add('hidden');
     }
 
-    const backBtn = previewEl.querySelector('#navBackBtn');
     const nextBtn = previewEl.querySelector('#navNextBtn');
-    backBtn.disabled = state.currentSlideIndex === 0;
+    updatePreviewButtons();
 
     const slideCount = state.slides.length;
     if (state.currentSlideIndex === state.slides.length - 1) {
@@ -1081,6 +1080,20 @@ function updateSlideDisplay() {
             <span class="nav-shortcut">Enter</span>
         `;
     }
+}
+
+// While a request runs (e.g. an edit of one slide), the preview's buttons are disabled — the same
+// as the keyboard shortcuts (handleGlobalKeydown). Removing a slide would shift deck.slides so the
+// edit lands on the wrong slide, and Insert/Cancel would drop the deck the edit is coming back to.
+// The progress bubble's own Cancel button stays enabled.
+function updatePreviewButtons() {
+    const previewEl = state.previewElement;
+    if (!previewEl) return;
+    const busy = state.isProcessing;
+    previewEl.querySelector('#navBackBtn').disabled = busy || state.currentSlideIndex === 0;
+    ['#navSkipBtn', '#navEditBtn', '#navNextBtn', '#previewCancelBtn'].forEach((selector) => {
+        previewEl.querySelector(selector).disabled = busy;
+    });
 }
 
 function setupPreviewNavigation(previewEl) {
@@ -2066,6 +2079,7 @@ function checkAndShowNPS() {
 function setProcessing(isProcessing) {
     state.isProcessing = isProcessing;
     updateInputState();
+    updatePreviewButtons();
 }
 
 // A book that's still uploading/processing would silently be left out of the request
