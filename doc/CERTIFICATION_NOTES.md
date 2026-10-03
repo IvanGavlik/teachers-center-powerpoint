@@ -8,7 +8,7 @@ No account or login is required to use the add-in.
 recently. If the first request shows a connection message, wait a moment and send it again.
 
 **Sample document for testing "Attach a book":**
-https://teacher-assistant.center/assets/sample-book.pdf — please download it before you start.
+https://teachers-center-powerpoint.onrender.com/assets/English%20Today.pdf — please download it before you start.
 
 ---
 
@@ -24,7 +24,7 @@ https://teacher-assistant.center/assets/sample-book.pdf — please download it b
 
 ## How to Install and Open the Add-in
 
-1. Open Microsoft PowerPoint (Windows desktop, version 16.0 or later; PowerPoint on the web also works)
+1. Open Microsoft PowerPoint (Microsoft 365 on Windows or Mac, PowerPoint 2019 or later on Mac, or PowerPoint on the web)
 2. Open a new blank presentation
 3. Go to the **Home** tab in the ribbon
 4. Click the **"Teacher Assistant"** button
@@ -68,11 +68,11 @@ https://teacher-assistant.center/assets/sample-book.pdf — please download it b
 ## Step 5 — Attach a book (new)
 
 1. Click the **paperclip** button in the message box and select the downloaded
-   `sample-book.pdf` (PDF only, up to 20 MB)
+   `English Today.pdf` (PDF only, up to 20 MB)
 2. A chip above the message box shows **Uploading… → Processing… → Ready** (usually under a
    minute). Sending is blocked until it is ready.
 3. Type: `Make 3 slides with the vocabulary from Unit 3` and press Enter
-4. Your message shows "📄 Using: sample-book.pdf". The slides use the vocabulary from the book
+4. Your message shows "📄 Using: English Today.pdf". The slides use the vocabulary from the book
    (booking, specials, starter, bill, tip …). Asking `Make slides about the reading text`
    produces slides about **The Copper Kettle**, **Marta** and **Leo** — names that appear only
    in the sample document, which shows the book was used.
