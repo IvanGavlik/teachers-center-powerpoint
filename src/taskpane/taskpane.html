@@ -295,18 +295,35 @@
                         <span class="material-icons">close</span>
                     </button>
                 </div>
-                <div class="modal-body">
-                    <div class="whats-new-row">
-                        <div class="whats-new-text">
-                            <h1>Interactivity Mode</h1>
-                            <ul>
-                                <li>Turn any lesson into a live game: multiple choice, sentence ordering, guess-the-word, or true/false.</li>
-                                <li>Just type <code>/</code>, select an interactivity mode, and describe what you want — <em>e.g. "make a quiz on past tense"</em>.</li>
-                                <li>Students scan a QR code on the inserted slide and play instantly on their own phone — no app needed.</li>
-                            </ul>
+                <div class="modal-body whats-new-body">
+                    <div class="whats-new-page active">
+                        <div class="whats-new-row">
+                            <div class="whats-new-text">
+                                <h1>Attach a Book</h1>
+                                <ul>
+                                    <li>Click the <span class="material-icons whats-new-inline-icon">attach_file</span> button and pick a PDF — a coursebook, a chapter or a worksheet (up to 20 MB).</li>
+                                    <li>Once the book is ready, your slides, edits and games use its vocabulary, examples and topics — <em>e.g. "make slides on the Unit 3 vocabulary"</em>.</li>
+                                    <li>One book per chat. Removing it starts a new chat.</li>
+                                </ul>
+                            </div>
+                            <div class="whats-new-image">
+                                <img src="../../assets/whats-new-book.png" alt="Attach a book button">
+                            </div>
                         </div>
-                        <div class="whats-new-image">
-                            <img src="../../assets/whats-new-interactivity.png" alt="Interactivity mode preview">
+                    </div>
+                    <div class="whats-new-page">
+                        <div class="whats-new-row">
+                            <div class="whats-new-text">
+                                <h1>Interactivity Mode</h1>
+                                <ul>
+                                    <li>Turn any lesson into a live game: multiple choice, sentence ordering, guess-the-word, or true/false.</li>
+                                    <li>Just type <code>/</code>, select an interactivity mode, and describe what you want — <em>e.g. "make a quiz on past tense"</em>.</li>
+                                    <li>Students scan a QR code on the inserted slide and play instantly on their own phone — no app needed.</li>
+                                </ul>
+                            </div>
+                            <div class="whats-new-image">
+                                <img src="../../assets/whats-new-interactivity.png" alt="Interactivity mode preview">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -315,7 +332,11 @@
                         <input type="checkbox" id="whatsNewDontShowAgain">
                         <span>Don't show this again</span>
                     </label>
-                    <button class="btn btn-primary" id="whatsNewCloseBtn">Close</button>
+                    <div class="whats-new-dots" id="whatsNewDots"></div>
+                    <div class="whats-new-nav">
+                        <button class="btn btn-secondary" id="whatsNewBackBtn">Back</button>
+                        <button class="btn btn-primary" id="whatsNewNextBtn">Next</button>
+                    </div>
                 </div>
             </div>
         </div>

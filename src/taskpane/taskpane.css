@@ -1474,6 +1474,56 @@ textarea:focus-visible {
 .whats-new-footer {
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+}
+
+/* Pages — one visible at a time; min-height keeps the footer from jumping between pages */
+.whats-new-body {
+    min-height: 260px;
+}
+
+.whats-new-page {
+    display: none;
+}
+
+.whats-new-page.active {
+    display: block;
+    animation: whatsNewFade 0.2s ease;
+}
+
+@keyframes whatsNewFade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.whats-new-inline-icon {
+    font-size: 15px;
+    vertical-align: -3px;
+    color: var(--accent-primary);
+}
+
+.whats-new-dots {
+    display: flex;
+    gap: 6px;
+}
+
+.whats-new-dot {
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background-color: var(--border-medium);
+    cursor: pointer;
+}
+
+.whats-new-dot.active {
+    background-color: var(--accent-primary);
+}
+
+.whats-new-nav {
+    display: flex;
+    gap: var(--spacing-sm);
 }
 
 .whats-new-checkbox {

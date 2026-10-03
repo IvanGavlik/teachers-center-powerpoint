@@ -134,6 +134,8 @@ const SLIDE_THEME = {
 // ============================================
 
 const state = {
+    whatsNewPage: 0,
+
     // Chat state
     isProcessing: false,
     pendingRequest: null,
@@ -385,7 +387,9 @@ function initializeTaskpane() {
         settingsAgeGroup: document.getElementById('settingsAgeGroup'),
         whatsNewModal: document.getElementById('whatsNewModal'),
         closeWhatsNewModalBtn: document.getElementById('closeWhatsNewModalBtn'),
-        whatsNewCloseBtn: document.getElementById('whatsNewCloseBtn'),
+        whatsNewBackBtn: document.getElementById('whatsNewBackBtn'),
+        whatsNewNextBtn: document.getElementById('whatsNewNextBtn'),
+        whatsNewDots: document.getElementById('whatsNewDots'),
         whatsNewDontShowAgain: document.getElementById('whatsNewDontShowAgain'),
         feedbackBtn: document.getElementById('feedbackBtn'),
         feedbackModal: document.getElementById('feedbackModal'),
@@ -487,9 +491,13 @@ function setupEventListeners() {
     });
 
     // What's New modal
-    const { closeWhatsNewModalBtn, whatsNewCloseBtn, whatsNewModal } = state.elements;
+    const { closeWhatsNewModalBtn, whatsNewBackBtn, whatsNewNextBtn, whatsNewModal } = state.elements;
     closeWhatsNewModalBtn.addEventListener('click', closeWhatsNewModal);
-    whatsNewCloseBtn.addEventListener('click', closeWhatsNewModal);
+    whatsNewBackBtn.addEventListener('click', () => showWhatsNewPage(state.whatsNewPage - 1));
+    whatsNewNextBtn.addEventListener('click', () => {
+        if (state.whatsNewPage < whatsNewPages().length - 1) showWhatsNewPage(state.whatsNewPage + 1);
+        else closeWhatsNewModal();
+    });
     whatsNewModal.addEventListener('click', (e) => {
         if (e.target === whatsNewModal) closeWhatsNewModal();
     });
@@ -1841,6 +1849,13 @@ function flashButton(btnId) {
 }
 
 function handleGlobalKeydown(e) {
+    if (isWhatsNewOpen()) {
+        if (e.key === 'ArrowRight') showWhatsNewPage(state.whatsNewPage + 1);
+        else if (e.key === 'ArrowLeft') showWhatsNewPage(state.whatsNewPage - 1);
+        else if (e.key === 'Escape') closeWhatsNewModal();
+        return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         const hasText = state.elements.messageInput.value.trim().length > 0;
@@ -1970,11 +1985,43 @@ function updateContextBadge() {
 // WHAT'S NEW
 // ============================================
 
-const WHATS_NEW_STORAGE_KEY = 'teachersCenterWhatsNewSeen_interactivity';
+// Bump the suffix with each release whose news everyone should see once, even if they ticked
+// "Don't show this again" for the previous one
+const WHATS_NEW_STORAGE_KEY = 'teachersCenterWhatsNewSeen_v2';
 
 function maybeShowWhatsNewModal() {
     if (localStorage.getItem(WHATS_NEW_STORAGE_KEY)) return;
+    showWhatsNewPage(0);
     state.elements.whatsNewModal.classList.remove('hidden');
+}
+
+function isWhatsNewOpen() {
+    return !state.elements.whatsNewModal.classList.contains('hidden');
+}
+
+function whatsNewPages() {
+    return state.elements.whatsNewModal.querySelectorAll('.whats-new-page');
+}
+
+// One page at a time; the dots are rebuilt each time so adding a page is HTML only
+function showWhatsNewPage(index) {
+    const pages = whatsNewPages();
+    const page = Math.max(0, Math.min(index, pages.length - 1));
+    state.whatsNewPage = page;
+    pages.forEach((el, i) => el.classList.toggle('active', i === page));
+
+    const { whatsNewDots, whatsNewBackBtn, whatsNewNextBtn } = state.elements;
+    whatsNewDots.innerHTML = '';
+    pages.forEach((_, i) => {
+        const dot = document.createElement('button');
+        dot.className = 'whats-new-dot' + (i === page ? ' active' : '');
+        dot.setAttribute('aria-label', `Page ${i + 1} of ${pages.length}`);
+        dot.addEventListener('click', () => showWhatsNewPage(i));
+        whatsNewDots.appendChild(dot);
+    });
+
+    whatsNewBackBtn.classList.toggle('hidden', page === 0);
+    whatsNewNextBtn.textContent = page === pages.length - 1 ? 'Got it' : 'Next';
 }
 
 function closeWhatsNewModal() {
