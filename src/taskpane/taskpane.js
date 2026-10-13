@@ -2061,7 +2061,7 @@ function updateContextBadge() {
 
 // Bump the suffix with each release whose news everyone should see once, even if they ticked
 // "Don't show this again" for the previous one
-const WHATS_NEW_STORAGE_KEY = 'teachersCenterWhatsNewSeen_v2';
+const WHATS_NEW_STORAGE_KEY = 'teachersCenterWhatsNewSeen_v2_1';
 
 function maybeShowWhatsNewModal() {
     if (localStorage.getItem(WHATS_NEW_STORAGE_KEY)) return;

@@ -1,24 +1,30 @@
 # Teacher Assistant – Certification Notes for Microsoft Reviewers
 
-Version 2.0.0.0
+Version 2.1.0.0
 
 No account or login is required to use the add-in.
 
 **Note on first use:** our server may need up to a minute to wake up if it has not been used
 recently. If the first request shows a connection message, wait a moment and send it again.
 
-**Sample document for testing "Attach a book":**
-https://teachers-center-powerpoint.onrender.com/assets/English%20Today.pdf — please download it before you start.
+**Sample documents for testing "Attach a book"** — please download both before you start:
+- Digital PDF: https://teachers-center-powerpoint.onrender.com/assets/English%20Today.pdf
+- Scanned PDF (the same pages as images only, no text layer):
+  https://teachers-center-powerpoint.onrender.com/assets/English-Today-scanned.pdf
 
 ---
 
 ## What's new in this version
 
-- **Attach a book** — attach a PDF (for example a coursebook unit) and slides, edits and games
-  are based on its content.
-- **New slide design** — slides are inserted as structured layouts (bullet lists, grammar
-  patterns, comparisons, vocabulary tables, example sentences) that fit the slide size.
-- **What's new dialog** — explains the new features on first start.
+- **Scanned books** — the text of scanned PDFs (pages that are only images) is now recognised,
+  so a scanned coursebook can be attached like a digital one.
+- **Bigger books** — PDFs up to 60 MB and 300 pages (was 20 MB).
+- **Upload progress** — the book chip shows each step: Uploading… → Reading your book… →
+  Indexing… → Ready.
+- **Clearer messages** when a book can't be used (too long, damaged or password-protected).
+- **What's new dialog** — shown once more on first start, with the updated book page.
+
+Version 2.0.0.0 added "Attach a book", the new slide design and the What's new dialog.
 
 ---
 
@@ -65,12 +71,12 @@ https://teachers-center-powerpoint.onrender.com/assets/English%20Today.pdf — p
   the presentation's own theme
 - A success message confirms the insert
 
-## Step 5 — Attach a book (new)
+## Step 5 — Attach a book (scanned books are new)
 
 1. Click the **paperclip** button in the message box and select the downloaded
-   `English Today.pdf` (PDF only, up to 20 MB)
-2. A chip above the message box shows **Uploading… → Processing… → Ready** (usually under a
-   minute). Sending is blocked until it is ready.
+   `English-Today-scanned.pdf` (PDF only, up to 60 MB and 300 pages)
+2. A chip above the message box shows **Uploading… → Reading your book… → Indexing… → Ready**
+   (usually under a minute). Sending is blocked until it is ready.
 3. Type: `Make 3 slides with the vocabulary from Unit 3` and press Enter
 4. Your message shows "📄 Using: English Today.pdf". The slides use the vocabulary from the book
    (booking, specials, starter, bill, tip …). Asking `Make slides about the reading text`
@@ -78,6 +84,7 @@ https://teachers-center-powerpoint.onrender.com/assets/English%20Today.pdf — p
    in the sample document, which shows the book was used.
 5. Click **✕** on the chip to remove the book. Because the conversation was based on the book,
    the add-in asks for confirmation; confirming starts a new chat.
+6. Repeat steps 1–4 with the digital `English Today.pdf` — it works the same way.
 
 ## Step 6 — Interactive games
 
@@ -125,7 +132,8 @@ message box (click anywhere on the preview first).
 ## Data and privacy
 
 - No account, sign-in or payment
-- Requests and uploaded PDFs are processed by OpenAI to generate content. Uploaded PDFs are
-  deleted automatically (the file after 7 days, its index 3 days after last use)
+- Requests are processed by OpenAI to generate content. Uploaded PDFs are sent to Microsoft Azure
+  AI Document Intelligence (EU) for text recognition; the recognised text is indexed at OpenAI.
+  The text is deleted automatically 29 days after upload, its index 3 days after last use
 - Privacy policy: https://teacher-assistant.center/privacy-policy.html
 - Support: https://teacher-assistant.center/support.html
