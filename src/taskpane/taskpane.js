@@ -181,7 +181,7 @@ const state = {
     pendingActivity: null,             // full activity payload while in interactivity preview
 
     // Attached book (file_search grounding) — one at a time, ephemeral to this session
-    attachedBook: null,                // null | { vectorStoreId, filename, status, sent }
+    attachedBook: null,                // null | { jobId (or legacyVectorStoreId from a pre-job backend), vectorStoreId (once ready), filename, status, stage, pages, sent }
                                         // status: 'uploading' | 'processing' | 'ready' | 'error'
     bookChangeConfirmEl: null,         // open "remove the document?" bubble, if any
     bookPollTimer: null,
@@ -1243,9 +1243,18 @@ function exitInteractivityMode() {
 // ATTACHED BOOK (file_search grounding)
 // ============================================
 
-const BOOK_MAX_SIZE_BYTES = 20 * 1024 * 1024; // matches the backend's own limit
+const BOOK_MAX_SIZE_BYTES = 60 * 1024 * 1024; // matches the backend's own limit (library.clj)
 const BOOK_POLL_INTERVAL_MS = 3000;
-const BOOK_POLL_MAX_ATTEMPTS = 40; // ~2 minutes
+const BOOK_POLL_MAX_ATTEMPTS = 100; // ~5 minutes — a scanned 200-page book takes ~1–2 (OCR + indexing)
+const BOOK_POLL_MAX_ERRORS = 3; // network errors in a row before the upload counts as failed
+
+// The backend reads the book (OCR for scans) and indexes it as a background job:
+// queued → ocr → indexing → usable (→ improving → ready in the background), or failed.
+const BOOK_STAGE_LABELS = {
+    queued: 'Uploading…',
+    ocr: 'Reading your book…',
+    indexing: 'Indexing…'
+};
 
 function handleBookFileSelected(file) {
     if (file.type !== 'application/pdf') {
@@ -1254,7 +1263,7 @@ function handleBookFileSelected(file) {
         return;
     }
     if (file.size > BOOK_MAX_SIZE_BYTES) {
-        showError('That file is too large (20MB max).');
+        showError('That file is too large (60MB max).');
         resetBookFileInput();
         return;
     }
@@ -1276,14 +1285,34 @@ async function uploadBook(file) {
 
     try {
         const res = await fetch(`${API_URL}/library/upload`, { method: 'POST', body: formData });
-        if (!res.ok) throw new Error('Upload failed');
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            // 400s and 429s carry a message meant for the teacher ("Book too long (300 pages max)",
+            // "…please try again tomorrow" when a daily limit is full)
+            showError([400, 429].includes(res.status) && data.error ? `${data.error}.` : 'Failed to upload the document. Please try again.');
+            detachBook();
+            return;
+        }
 
-        state.attachedBook = {
-            vectorStoreId: data['vector-store-id'],
-            filename: file.name,
-            status: 'processing'
-        };
+        if (data.id) {
+            state.attachedBook = {
+                jobId: data.id,
+                filename: file.name,
+                status: 'processing',
+                stage: data.status,
+                pages: data['pages-total']
+            };
+        } else if (data['vector-store-id']) {
+            // A backend from before book jobs (2.0.0) answers with the vector store itself. Kept so
+            // the add-in and the backend can be deployed in either order — remove once both are live.
+            state.attachedBook = {
+                legacyVectorStoreId: data['vector-store-id'],
+                filename: file.name,
+                status: 'processing'
+            };
+        } else {
+            throw new Error('Upload response has neither a job id nor a vector store id');
+        }
         renderBookChip();
         startBookStatusPolling();
     } catch (error) {
@@ -1302,34 +1331,79 @@ function startBookStatusPolling() {
 }
 
 async function pollBookStatus() {
-    if (!state.attachedBook || !state.attachedBook.vectorStoreId) return;
+    const book = state.attachedBook;
+    if (!book || book.status !== 'processing') return;
 
+    // Counted before anything else can return, so a book that can't be checked still times out
+    // instead of showing "Processing…" forever
     state.bookPollAttempts++;
     if (state.bookPollAttempts > BOOK_POLL_MAX_ATTEMPTS) {
         showError('Your document is taking longer than expected to process. Please try again.');
         detachBook();
         return;
     }
+    const statusId = book.jobId || book.legacyVectorStoreId;
+    if (!statusId) {
+        failBookUpload();
+        return;
+    }
+
+    // Polls can overlap (a slow request and the next tick): whichever finishes after the book is
+    // ready, removed or replaced must do nothing — a late error must never drop a ready book.
+    const stillWaiting = () => state.attachedBook === book && book.status === 'processing';
+    let res;
+    try {
+        res = await fetch(`${API_URL}/library/book-status/${statusId}`);
+        if (res.status >= 500) throw new Error(`Server error (${res.status})`); // e.g. 502 during a deploy
+    } catch (error) {
+        // A network or server hiccup isn't a failed upload — give up only after several in a row
+        if (!stillWaiting()) return;
+        book.pollErrors = (book.pollErrors || 0) + 1;
+        console.warn('[Library] Status check failed:', error);
+        if (book.pollErrors >= BOOK_POLL_MAX_ERRORS) failBookUpload();
+        return;
+    }
 
     try {
-        const res = await fetch(`${API_URL}/library/book-status/${state.attachedBook.vectorStoreId}`);
-        if (!res.ok) throw new Error('Status check failed');
+        // 404 = the backend no longer knows the upload (e.g. it restarted) — same as failed
+        if (!res.ok) throw new Error(`Status check failed (${res.status})`);
         const data = await res.json();
+        if (!stillWaiting()) return;
+        book.pollErrors = 0;
 
-        if (data.status === 'completed') {
-            clearInterval(state.bookPollTimer);
-            state.attachedBook.status = 'ready';
-            renderBookChip();
-            addInfoMessage(`"${state.attachedBook.filename}" is ready — your next message will use it. (Free tier: removed after a few days.)`);
-        } else if (data.status === 'expired' || (data['file-counts'] && data['file-counts'].failed > 0)) {
-            throw new Error('Processing failed');
+        if (book.legacyVectorStoreId) {
+            // pre-job backend: OpenAI's own vector store status
+            if (data.status === 'expired' || (data['file-counts'] && data['file-counts'].failed > 0)) {
+                throw new Error('Processing failed');
+            }
+            data.status = data.status === 'completed' ? 'ready' : 'indexing';
+            data['vector-store-id'] = book.legacyVectorStoreId;
         }
-        // otherwise still "in_progress" — keep polling
+
+        // usable = searchable with the OCR text; improving/ready = the layout is being / was repaired
+        // in the background (the same index) — the teacher doesn't wait for that
+        if (['usable', 'improving', 'ready'].includes(data.status)) {
+            clearInterval(state.bookPollTimer);
+            book.vectorStoreId = data['vector-store-id'];
+            book.status = 'ready';
+            renderBookChip();
+            addInfoMessage(`"${book.filename}" is ready — your next message will use it. (Free tier: removed after a few days.)`);
+        } else if (data.status === 'failed') {
+            throw new Error(`Processing failed: ${data.error}`);
+        } else if (data.status !== book.stage) {
+            book.stage = data.status; // still working — show which step
+            renderBookChip();
+        }
     } catch (error) {
+        if (!stillWaiting()) return;
         console.error('[Library] Status check failed:', error);
-        showError('Failed to process the attached document. Please try again.');
-        detachBook();
+        failBookUpload();
     }
+}
+
+function failBookUpload() {
+    showError('Failed to process the attached document. Please try again.');
+    detachBook();
 }
 
 // A book that was sent may already be in the conversation's history (file_search passages travel
@@ -1411,7 +1485,7 @@ function renderBookChip() {
         bookChipStatus.textContent = 'Uploading…';
     } else if (book.status === 'processing') {
         bookChipIcon.textContent = 'description';
-        bookChipStatus.textContent = 'Processing…';
+        bookChipStatus.textContent = BOOK_STAGE_LABELS[book.stage] || 'Processing…';
     } else if (book.status === 'ready') {
         bookChipIcon.textContent = 'check_circle';
         bookChipStatus.textContent = 'Ready';
