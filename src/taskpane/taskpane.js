@@ -465,11 +465,12 @@ function setupEventListeners() {
     // Attach-a-book (file_search grounding)
     const { attachBookBtn, bookFileInput, bookChipCancelBtn } = state.elements;
     if (attachBookBtn && bookFileInput) {
-        attachBookBtn.addEventListener('click', () => bookFileInput.click());
+        attachBookBtn.addEventListener('click', handleAttachClick);
         bookFileInput.addEventListener('change', () => {
             const file = bookFileInput.files && bookFileInput.files[0];
             if (file) handleBookFileSelected(file);
         });
+        setupBookDragAndDrop();
     }
     if (bookChipCancelBtn) {
         bookChipCancelBtn.addEventListener('click', handleBookChipCancel);
@@ -1256,14 +1257,85 @@ const BOOK_STAGE_LABELS = {
     indexing: 'Indexing…'
 };
 
-function handleBookFileSelected(file) {
-    if (file.type !== 'application/pdf') {
-        showError('Only PDF files are supported.');
-        resetBookFileInput();
+// WebView2 silently refuses to open a file picker in a window under 400×300 ("File chooser dialog
+// was suppressed…", console only), and a task pane can be narrower than that. The margin is there
+// because this reads the window size from the page, which may not match the engine's exact number.
+const FILE_PICKER_MIN_WIDTH = 420;
+const FILE_PICKER_MIN_HEIGHT = 320;
+
+let narrowPaneHintEl = null;
+
+function filePickerMayBeBlocked() {
+    const width = window.outerWidth || window.innerWidth;
+    const height = window.outerHeight || window.innerHeight;
+    return width < FILE_PICKER_MIN_WIDTH || height < FILE_PICKER_MIN_HEIGHT;
+}
+
+// Always tries the picker: the check only adds a hint, so a wrong size reading can't block a picker
+// that would have opened.
+function handleAttachClick() {
+    state.elements.bookFileInput.click();
+    if (filePickerMayBeBlocked() && !narrowPaneHintEl?.isConnected) {
+        narrowPaneHintEl = addInfoMessage('If no file window opens, this panel is too narrow. Widen it by dragging its left edge, or drag your PDF here.');
+    }
+}
+
+function setupBookDragAndDrop() {
+    const appBody = document.getElementById('app-body');
+    const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+    let dragDepth = 0; // dragenter/dragleave also fire for every child element crossed
+
+    document.addEventListener('dragenter', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth++;
+        appBody.classList.add('book-drop-active');
+    });
+    document.addEventListener('dragover', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault(); // without this the page doesn't accept the drop
+        e.dataTransfer.dropEffect = 'copy';
+    });
+    document.addEventListener('dragleave', (e) => {
+        if (!hasFiles(e)) return;
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) appBody.classList.remove('book-drop-active');
+    });
+    document.addEventListener('drop', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault(); // otherwise the webview navigates to the dropped file
+        dragDepth = 0;
+        appBody.classList.remove('book-drop-active');
+        handleBookDropped(e.dataTransfer.files[0]);
+    });
+}
+
+// Uses info messages, not showError: that closes the preview, and a stray drop shouldn't cost the
+// teacher their slides.
+function handleBookDropped(file) {
+    if (!file) return;
+    if (state.attachedBook) {
+        addInfoMessage(`Only one book per chat. Remove "${state.attachedBook.filename}" first with the ✕ next to its name.`);
         return;
     }
-    if (file.size > BOOK_MAX_SIZE_BYTES) {
-        showError('That file is too large (60MB max).');
+    const problem = bookFileProblem(file);
+    if (problem) {
+        addInfoMessage(problem);
+        return;
+    }
+    uploadBook(file);
+}
+
+function bookFileProblem(file) {
+    if (file.type !== 'application/pdf') return 'Only PDF files are supported.';
+    if (file.size > BOOK_MAX_SIZE_BYTES) return 'That file is too large (60MB max).';
+    return null;
+}
+
+function handleBookFileSelected(file) {
+    const problem = bookFileProblem(file);
+    if (problem) {
+        showError(problem);
         resetBookFileInput();
         return;
     }
@@ -1498,6 +1570,7 @@ function addInfoMessage(text) {
     const infoEl = clone.querySelector('.message-info');
     infoEl.querySelector('.info-text').textContent = text;
     appendToChatBody(infoEl);
+    return infoEl;
 }
 
 // ── Interactivity preview ─────────────────────────────────────────────────────

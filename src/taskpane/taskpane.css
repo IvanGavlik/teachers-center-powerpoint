@@ -1121,6 +1121,28 @@ body {
     color: var(--text-tertiary);
 }
 
+/* A file is being dragged over the pane. pointer-events: none so the overlay doesn't disturb the drag events */
+#app-body.book-drop-active::after {
+    content: 'Drop your PDF to attach it';
+    position: fixed;
+    top: var(--spacing-sm);
+    right: var(--spacing-sm);
+    bottom: var(--spacing-sm);
+    left: var(--spacing-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-primary);
+    border: 2px dashed var(--accent-primary);
+    border-radius: var(--radius-md);
+    color: var(--accent-primary);
+    font-size: 14px;
+    font-weight: 600;
+    opacity: 0.95;
+    pointer-events: none;
+    z-index: 900;
+}
+
 /* Pressed Enter while the book is still processing — sending waits for it */
 .book-chip.book-chip-blocked {
     border-color: var(--accent-primary);
